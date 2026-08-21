@@ -1,0 +1,940 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RoleName {
+  ADMINISTRADOR
+  RECEPCIONISTA
+  RESTAURANTE
+  BARTENDER
+  PISCINA
+  LIMPIEZA
+  EVENTOS
+  MANTENIMIENTO
+}
+
+enum UserStatus {
+  ACTIVO
+  SUSPENDIDO
+  INACTIVO
+}
+
+enum ClientStatus {
+  ACTIVO
+  INACTIVO
+  HOSPEDADO
+}
+
+enum RoomStatus {
+  LIBRE
+  RESERVADA
+  OCUPADA
+  EN_LIMPIEZA
+  MANTENIMIENTO
+  FUERA_SERVICIO
+}
+
+enum ReservationStatus {
+  PENDIENTE
+  CONFIRMADA
+  CHECKED_IN
+  CANCELADA
+  COMPLETADA
+  NO_SHOW
+}
+
+enum ReservationOrigin {
+  WEB
+  RECEPCION
+  ADMIN
+}
+
+enum StayStatus {
+  ACTIVA
+  FINALIZADA
+}
+
+enum OrderArea {
+  RESTAURANTE
+  BARTENDER
+  PISCINA
+  EVENTO
+  OTRO
+}
+
+enum OrderStatus {
+  PENDIENTE
+  EN_COCINA
+  PREPARANDO
+  LISTO
+  ENTREGADO
+  CANCELADO
+}
+
+enum ConsumptionStatus {
+  PENDIENTE
+  PAGADO
+  ANULADO
+}
+
+enum PaymentMethod {
+  EFECTIVO
+  TARJETA
+  YAPE
+  PLIN
+  TRANSFERENCIA
+}
+
+enum PaymentStatus {
+  REGISTRADO
+  ANULADO
+}
+
+enum InvoiceType {
+  BOLETA
+  FACTURA
+}
+
+enum InvoiceStatus {
+  EMITIDA
+  ANULADA
+}
+
+enum PoolEntryType {
+  HUESPED
+  CLIENTE_EXTERNO
+  EVENTO
+}
+
+enum PoolEntryStatus {
+  ACTIVO
+  FINALIZADO
+}
+
+enum PoolReportType {
+  QUEJA
+  INCIDENTE
+  ACCIDENTE
+  PROBLEMA_SERVICIO
+  OBSERVACION
+  OTRO
+}
+
+enum EventStatus {
+  COTIZACION
+  RESERVADO
+  CONFIRMADO
+  FINALIZADO
+  CANCELADO
+}
+
+enum ParkingStatus {
+  LIBRE
+  OCUPADO
+  RESERVADO
+}
+
+enum CleaningStatus {
+  PENDIENTE
+  EN_LIMPIEZA
+  FINALIZADA
+}
+
+enum CleaningReportType {
+  DANO
+  OBJETO_PERDIDO
+  FALTA_INSUMO
+  MANTENIMIENTO
+  INCIDENCIA
+  OBSERVACION
+}
+
+enum ReportStatus {
+  ABIERTO
+  EN_REVISION
+  RESUELTO
+}
+
+enum InventoryMovementType {
+  ENTRADA
+  SALIDA
+  AJUSTE
+  ENTRADA_COMPRA
+}
+
+enum InventoryArea {
+  RESTAURANTE
+  BARTENDER
+  LIMPIEZA
+  MANTENIMIENTO
+}
+
+enum PurchaseStatus {
+  BORRADOR
+  PENDIENTE
+  APROBADA
+  RECIBIDA
+  CANCELADA
+}
+
+enum SupplyRequestStatus {
+  PENDIENTE
+  APROBADA
+  RECHAZADA
+  ENTREGADA
+}
+
+enum CashMovementType {
+  INGRESO
+  EGRESO
+}
+
+enum AttendanceStatus {
+  PRESENTE
+  FINALIZADA
+  REQUIERE_REVISION
+}
+
+model Role {
+  id          Int              @id @default(autoincrement())
+  name        RoleName         @unique
+  description String?
+  users       User[]
+  permissions RolePermission[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+}
+
+model Permission {
+  id        Int              @id @default(autoincrement())
+  module    String
+  action    String
+  roles     RolePermission[]
+  createdAt DateTime         @default(now())
+
+  @@unique([module, action])
+  @@index([module])
+}
+
+model RolePermission {
+  id           Int        @id @default(autoincrement())
+  roleId       Int
+  permissionId Int
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+}
+
+model User {
+  id              Int              @id @default(autoincrement())
+  firstName       String
+  lastName        String
+  email           String           @unique
+  documentNumber  String?          @unique
+  phone           String?
+  birthDate       DateTime?
+  photoUrl        String?
+  position        String?
+  hireDate        DateTime?
+  username        String?          @unique
+  passwordHash    String
+  status          UserStatus       @default(ACTIVO)
+  roleId          Int
+  role            Role             @relation(fields: [roleId], references: [id])
+  auditLogs       AuditLog[]
+  poolReports     PoolReport[]
+  cleaningReports CleaningReport[]
+  cleaningEvidence CleaningEvidence[]
+  finishedCleaningTasks CleaningTask[] @relation("CleaningTaskFinishedBy")
+  reportedOperationalReports OperationalReport[] @relation("OperationalReportReportedBy")
+  resolvedOperationalReports OperationalReport[] @relation("OperationalReportResolvedBy")
+  assignedOperationalReports OperationalReport[] @relation("OperationalReportAssignedTo")
+  attendanceRecords AttendanceRecord[] @relation("AttendanceWorker")
+  correctedAttendanceRecords AttendanceRecord[] @relation("AttendanceCorrectedBy")
+  inventoryMovements InventoryMovement[]
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+}
+
+model AttendanceRecord {
+  id              Int              @id @default(autoincrement())
+  userId          Int
+  user            User             @relation("AttendanceWorker", fields: [userId], references: [id])
+  checkInAt       DateTime
+  checkOutAt      DateTime?
+  durationMinutes Int?
+  status          AttendanceStatus @default(PRESENTE)
+  reviewReason    String?
+  correctedById   Int?
+  correctedBy     User?            @relation("AttendanceCorrectedBy", fields: [correctedById], references: [id])
+  correctionReason String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([userId, checkInAt])
+  @@index([status])
+}
+
+model Client {
+  id             Int            @id @default(autoincrement())
+  documentType   String
+  documentNumber String         @unique
+  firstName      String
+  lastName       String
+  phone          String?
+  email          String?
+  address        String?
+  birthDate      DateTime?
+  registeredAt   DateTime       @default(now())
+  status         ClientStatus   @default(ACTIVO)
+  reservations   Reservation[]
+  stays          Stay[]
+  consumptions   Consumption[]
+  payments       Payment[]
+  invoices       Invoice[]
+  poolEntries    PoolEntry[]
+  poolReports    PoolReport[]
+  events         Event[]
+  vehicleEntries VehicleEntry[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([firstName, lastName])
+  @@index([documentNumber])
+}
+
+model RoomType {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  description String?
+  basePrice   Decimal  @db.Decimal(10, 2)
+  capacity    Int
+  active      Boolean  @default(true)
+  rooms       Room[]
+}
+
+model Room {
+  id              Int              @id @default(autoincrement())
+  number          String           @unique
+  floor           Int
+  typeId          Int
+  type            RoomType         @relation(fields: [typeId], references: [id])
+  price           Decimal          @db.Decimal(10, 2)
+  capacity        Int
+  description     String?
+  status          RoomStatus       @default(LIBRE)
+  reservations    Reservation[]
+  stays           Stay[]
+  cleaningTasks   CleaningTask[]
+  cleaningEvidences CleaningEvidence[]
+  cleaningReports CleaningReport[]
+  operationalReports OperationalReport[]
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([status])
+  @@index([floor])
+  @@index([number])
+}
+
+model Reservation {
+  id           Int               @id @default(autoincrement())
+  code         String            @unique
+  clientId     Int
+  roomId       Int
+  checkInDate  DateTime
+  checkOutDate DateTime
+  adults       Int               @default(1)
+  children     Int               @default(0)
+  totalPrice   Decimal           @db.Decimal(10, 2)
+  advance      Decimal           @default(0) @db.Decimal(10, 2)
+  balance      Decimal           @db.Decimal(10, 2)
+  status       ReservationStatus @default(PENDIENTE)
+  origin       ReservationOrigin @default(RECEPCION)
+  notes        String?
+  createdById  Int?
+  client       Client            @relation(fields: [clientId], references: [id])
+  room         Room              @relation(fields: [roomId], references: [id])
+  stay         Stay?
+  payments     Payment[]
+  poolEntries  PoolEntry[]
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  @@index([checkInDate])
+  @@index([checkOutDate])
+  @@index([status])
+}
+
+model Stay {
+  id            Int           @id @default(autoincrement())
+  reservationId Int           @unique
+  clientId      Int
+  roomId        Int
+  checkInAt     DateTime      @default(now())
+  checkOutAt    DateTime?
+  status        StayStatus    @default(ACTIVA)
+  reservation   Reservation   @relation(fields: [reservationId], references: [id])
+  client        Client        @relation(fields: [clientId], references: [id])
+  room          Room          @relation(fields: [roomId], references: [id])
+  consumptions  Consumption[]
+  payments      Payment[]
+  orders        Order[]
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+}
+
+model Order {
+  id          Int          @id @default(autoincrement())
+  code        String       @unique
+  area        OrderArea
+  clientId    Int?
+  roomId      Int?
+  stayId      Int?
+  status      OrderStatus  @default(PENDIENTE)
+  total       Decimal      @default(0) @db.Decimal(10, 2)
+  notes       String?
+  createdById Int?
+  stay        Stay?        @relation(fields: [stayId], references: [id])
+  items       OrderItem[]
+  consumption Consumption?
+  stockReservation OrderStockReservation?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([area, status])
+}
+
+model OrderItem {
+  id        Int      @id @default(autoincrement())
+  orderId   Int
+  productId Int?
+  name      String
+  category  String?
+  price     Decimal  @db.Decimal(10, 2)
+  quantity  Int
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product   Product? @relation(fields: [productId], references: [id])
+}
+
+model Consumption {
+  id        Int               @id @default(autoincrement())
+  clientId  Int?
+  stayId    Int?
+  orderId   Int?              @unique
+  area      String
+  concept   String
+  amount    Decimal           @db.Decimal(10, 2)
+  status    ConsumptionStatus @default(PENDIENTE)
+  createdAt DateTime          @default(now())
+  client    Client?           @relation(fields: [clientId], references: [id])
+  stay      Stay?             @relation(fields: [stayId], references: [id])
+  order     Order?            @relation(fields: [orderId], references: [id])
+}
+
+model Payment {
+  id            Int           @id @default(autoincrement())
+  clientId      Int?
+  reservationId Int?
+  stayId        Int?
+  eventId       Int?
+  method        PaymentMethod
+  reference     String?
+  status        PaymentStatus @default(REGISTRADO)
+  area          String
+  concept       String
+  amount        Decimal       @db.Decimal(10, 2)
+  paidAt        DateTime      @default(now())
+  createdById   Int?
+  client        Client?       @relation(fields: [clientId], references: [id])
+  reservation   Reservation?  @relation(fields: [reservationId], references: [id])
+  stay          Stay?         @relation(fields: [stayId], references: [id])
+  event         Event?        @relation(fields: [eventId], references: [id])
+  invoice       Invoice?
+  cashMovement  CashMovement?
+
+  @@index([paidAt])
+  @@index([area])
+  @@index([status])
+}
+
+model Invoice {
+  id        Int           @id @default(autoincrement())
+  type      InvoiceType
+  series    String
+  number    Int
+  clientId  Int
+  paymentId Int?          @unique
+  subtotal  Decimal       @db.Decimal(10, 2)
+  tax       Decimal       @db.Decimal(10, 2)
+  total     Decimal       @db.Decimal(10, 2)
+  status    InvoiceStatus @default(EMITIDA)
+  issuedAt  DateTime      @default(now())
+  client    Client        @relation(fields: [clientId], references: [id])
+  payment   Payment?      @relation(fields: [paymentId], references: [id])
+
+  @@unique([series, number])
+}
+
+model PoolEntry {
+  id            Int             @id @default(autoincrement())
+  clientId      Int?
+  reservationId Int?
+  eventId       Int?
+  type          PoolEntryType
+  qrCode        String?         @unique
+  people        Int
+  entryAt       DateTime        @default(now())
+  exitAt        DateTime?
+  status        PoolEntryStatus @default(ACTIVO)
+  createdById   Int?
+  client        Client?         @relation(fields: [clientId], references: [id])
+  reservation   Reservation?    @relation(fields: [reservationId], references: [id])
+  event         Event?          @relation(fields: [eventId], references: [id])
+}
+
+model PoolReport {
+  id           Int            @id @default(autoincrement())
+  clientId     Int?
+  type         PoolReportType
+  description  String
+  priority     String         @default("MEDIA")
+  status       ReportStatus   @default(ABIERTO)
+  reportedById Int?
+  client       Client?        @relation(fields: [clientId], references: [id])
+  reportedBy   User?          @relation(fields: [reportedById], references: [id])
+  createdAt    DateTime       @default(now())
+
+  @@index([status])
+}
+
+model EventSpace {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  capacity  Int
+  basePrice Decimal  @default(0) @db.Decimal(10, 2)
+  active    Boolean  @default(true)
+  events    Event[]
+}
+
+model Event {
+  id          Int             @id @default(autoincrement())
+  clientId    Int
+  spaceId     Int
+  name        String
+  type        String
+  startsAt    DateTime
+  endsAt      DateTime
+  guests      Int
+  price       Decimal         @db.Decimal(10, 2)
+  advance     Decimal         @default(0) @db.Decimal(10, 2)
+  balance     Decimal         @db.Decimal(10, 2)
+  status      EventStatus     @default(COTIZACION)
+  notes       String?
+  contractUrl String?
+  createdById Int?
+  client      Client          @relation(fields: [clientId], references: [id])
+  space       EventSpace      @relation(fields: [spaceId], references: [id])
+  contract    EventContract?
+  payments    Payment[]
+  poolEntries PoolEntry[]
+
+  @@index([startsAt])
+}
+
+model EventContract {
+  id           Int      @id @default(autoincrement())
+  eventId      Int      @unique
+  contractDate DateTime @default(now())
+  terms        String
+  amount       Decimal  @db.Decimal(10, 2)
+  status       String   @default("ACTIVO")
+  event        Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+}
+
+model ParkingSpace {
+  id      Int            @id @default(autoincrement())
+  code    String         @unique
+  status  ParkingStatus  @default(LIBRE)
+  entries VehicleEntry[]
+}
+
+model VehicleEntry {
+  id       Int          @id @default(autoincrement())
+  spaceId  Int
+  clientId Int?
+  plate    String
+  brand    String?
+  model    String?
+  color    String?
+  entryAt  DateTime     @default(now())
+  exitAt   DateTime?
+  status   String       @default("ACTIVO")
+  space    ParkingSpace @relation(fields: [spaceId], references: [id])
+  client   Client?      @relation(fields: [clientId], references: [id])
+}
+
+model CleaningTask {
+  id           Int                @id @default(autoincrement())
+  roomId       Int
+  status       CleaningStatus     @default(PENDIENTE)
+  priority     String             @default("MEDIA")
+  checkoutAt   DateTime?
+  assignedToId Int?
+  assignedTo   String?
+  startedAt    DateTime?
+  finishedAt   DateTime?
+  finishedById Int?
+  bathroom     Boolean            @default(false)
+  bed          Boolean            @default(false)
+  floor        Boolean            @default(false)
+  surfaces     Boolean            @default(false)
+  amenities    Boolean            @default(false)
+  minibar      Boolean            @default(false)
+  finalCheck   Boolean            @default(false)
+  room         Room               @relation(fields: [roomId], references: [id])
+  finishedBy   User?              @relation("CleaningTaskFinishedBy", fields: [finishedById], references: [id])
+  evidences    CleaningEvidence[]
+  reports      CleaningReport[]
+  operationalReports OperationalReport[]
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+}
+
+model CleaningEvidence {
+  id          Int          @id @default(autoincrement())
+  taskId      Int
+  roomId      Int?
+  fileUrl     String
+  imageUrl    String?
+  fileName    String?
+  mimeType    String?
+  size        Int?
+  description String?
+  notes       String?
+  createdById Int?
+  task        CleaningTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  room        Room?        @relation(fields: [roomId], references: [id])
+  createdBy   User?        @relation(fields: [createdById], references: [id])
+  createdAt   DateTime     @default(now())
+}
+
+model CleaningReport {
+  id             Int                @id @default(autoincrement())
+  roomId         Int
+  cleaningTaskId Int?
+  type           CleaningReportType
+  description    String
+  priority       String             @default("MEDIA")
+  status         ReportStatus       @default(ABIERTO)
+  reportedById   Int?
+  resolvedAt      DateTime?
+  resolvedById    Int?
+  room           Room               @relation(fields: [roomId], references: [id])
+  cleaningTask   CleaningTask?      @relation(fields: [cleaningTaskId], references: [id])
+  reportedBy     User?              @relation(fields: [reportedById], references: [id])
+  createdAt      DateTime           @default(now())
+
+  @@index([status])
+}
+
+model OperationalReport {
+  id                  Int                         @id @default(autoincrement())
+  code                String                      @unique
+  area                String
+  type                String
+  description         String
+  priority            String                      @default("MEDIA")
+  status              ReportStatus                @default(ABIERTO)
+  requiresMaintenance Boolean                     @default(false)
+  reportedById        Int?
+  assignedToId        Int?
+  resolvedById        Int?
+  roomId              Int?
+  cleaningTaskId      Int?
+  productId           Int?
+  reportedBy          User?                       @relation("OperationalReportReportedBy", fields: [reportedById], references: [id])
+  assignedTo          User?                       @relation("OperationalReportAssignedTo", fields: [assignedToId], references: [id])
+  resolvedBy          User?                       @relation("OperationalReportResolvedBy", fields: [resolvedById], references: [id])
+  room                Room?                       @relation(fields: [roomId], references: [id])
+  cleaningTask        CleaningTask?               @relation(fields: [cleaningTaskId], references: [id])
+  product             Product?                    @relation(fields: [productId], references: [id])
+  evidences           OperationalReportEvidence[]
+  startedAt           DateTime?
+  workDescription     String?
+  observations        String?
+  createdAt           DateTime                    @default(now())
+  resolvedAt          DateTime?
+
+  @@index([area])
+  @@index([status])
+  @@index([priority])
+  @@index([type])
+  @@index([assignedToId])
+}
+
+model OperationalReportEvidence {
+  id        Int               @id @default(autoincrement())
+  reportId  Int
+  imageUrl  String
+  fileName  String?
+  mimeType  String?
+  size      Int?
+  report    OperationalReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  createdAt DateTime          @default(now())
+}
+
+model Category {
+  id          Int       @id @default(autoincrement())
+  name        String    @unique
+  description String?
+  active      Boolean   @default(true)
+  products    Product[]
+}
+
+model Product {
+  id            Int                  @id @default(autoincrement())
+  name          String
+  categoryId    Int
+  area          InventoryArea        @default(RESTAURANTE)
+  unit          String
+  stock         Decimal              @default(0) @db.Decimal(10, 2)
+  minStock      Decimal              @default(0) @db.Decimal(10, 2)
+  cost          Decimal              @default(0) @db.Decimal(10, 2)
+  price         Decimal              @default(0) @db.Decimal(10, 2)
+  status        String               @default("ACTIVO")
+  active        Boolean              @default(true)
+  category      Category             @relation(fields: [categoryId], references: [id])
+  movements     InventoryMovement[]
+  orderItems    OrderItem[]
+  recipeItems   RecipeItem[]
+  stockReservationItems OrderStockReservationItem[]
+  productionInputs ProductionBatch[] @relation("ProductionInput")
+  productionOutputs ProductionBatch[] @relation("ProductionOutput")
+  operationalReports OperationalReport[]
+  purchaseItems PurchaseItem[]
+  supplyItems   SupplyRequestItem[]
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  @@unique([name, categoryId])
+  @@index([stock])
+  @@index([area])
+}
+
+model OrderStockReservation {
+  id          Int                         @id @default(autoincrement())
+  orderId     Int                         @unique
+  status      String                      @default("ACTIVA")
+  createdById Int?
+  consumedAt  DateTime?
+  releasedAt  DateTime?
+  order       Order                       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  items       OrderStockReservationItem[]
+  createdAt   DateTime                    @default(now())
+  updatedAt   DateTime                    @updatedAt
+
+  @@index([status])
+}
+
+model OrderStockReservationItem {
+  id            Int                   @id @default(autoincrement())
+  reservationId Int
+  productId     Int
+  quantity      Decimal               @db.Decimal(10, 2)
+  unit          String
+  source        String?
+  reservation   OrderStockReservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  product       Product               @relation(fields: [productId], references: [id])
+
+  @@index([productId])
+}
+
+model Recipe {
+  id        Int          @id @default(autoincrement())
+  name      String
+  area      InventoryArea
+  active    Boolean      @default(true)
+  items     RecipeItem[]
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@unique([name, area])
+}
+
+model RecipeItem {
+  id        Int     @id @default(autoincrement())
+  recipeId  Int
+  productId Int
+  quantity  Decimal @db.Decimal(10, 2)
+  unit      String
+  recipe    Recipe  @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  product   Product @relation(fields: [productId], references: [id])
+}
+
+enum MovementOrigin {
+  COMPRA
+  PEDIDO
+  PRODUCCION
+  MERMA
+  AJUSTE_MANUAL
+  ENTRADA_MANUAL
+  SALIDA_MANUAL
+  SOLICITUD_INSUMO
+  DANO
+  PERDIDA
+  OTRO
+}
+
+model InventoryMovement {
+  id          Int                   @id @default(autoincrement())
+  productId   Int
+  type        InventoryMovementType
+  origin      MovementOrigin?
+  quantity    Decimal               @db.Decimal(10, 2)
+  beforeQty   Decimal               @db.Decimal(10, 2)
+  afterQty    Decimal               @db.Decimal(10, 2)
+  unitCost    Decimal?              @db.Decimal(10, 2)
+  reason      String?
+  reference   String?
+  createdById Int?
+  product     Product               @relation(fields: [productId], references: [id])
+  createdBy   User?                 @relation(fields: [createdById], references: [id])
+  createdAt   DateTime              @default(now())
+}
+
+model ProductionBatch {
+  id              Int           @id @default(autoincrement())
+  code            String        @unique
+  area            InventoryArea @default(RESTAURANTE)
+  inputProductId  Int
+  outputProductId Int
+  inputQty        Decimal       @db.Decimal(10, 2)
+  outputQty       Decimal       @db.Decimal(10, 2)
+  wasteQty        Decimal       @db.Decimal(10, 2)
+  yieldPercent    Decimal       @db.Decimal(5, 2)
+  status          String        @default("FINALIZADA")
+  notes           String?
+  createdById     Int?
+  inputProduct    Product       @relation("ProductionInput", fields: [inputProductId], references: [id])
+  outputProduct   Product       @relation("ProductionOutput", fields: [outputProductId], references: [id])
+  createdAt       DateTime      @default(now())
+
+  @@index([area])
+  @@index([createdAt])
+}
+
+model Supplier {
+  id        Int        @id @default(autoincrement())
+  ruc       String     @unique
+  name      String
+  contact   String?
+  phone     String?
+  email     String?
+  address   String?
+  status    String     @default("ACTIVO")
+  purchases Purchase[]
+  createdAt DateTime   @default(now())
+}
+
+model Purchase {
+  id          Int            @id @default(autoincrement())
+  supplierId  Int
+  status      PurchaseStatus @default(BORRADOR)
+  total       Decimal        @default(0) @db.Decimal(10, 2)
+  createdById Int?
+  receivedAt  DateTime?
+  supplier    Supplier       @relation(fields: [supplierId], references: [id])
+  items       PurchaseItem[]
+  createdAt   DateTime       @default(now())
+}
+
+model PurchaseItem {
+  id         Int      @id @default(autoincrement())
+  purchaseId Int
+  productId  Int
+  quantity   Decimal  @db.Decimal(10, 2)
+  cost       Decimal  @db.Decimal(10, 2)
+  purchase   Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  product    Product  @relation(fields: [productId], references: [id])
+}
+
+model SupplyRequest {
+  id        Int                 @id @default(autoincrement())
+  area      String
+  status    SupplyRequestStatus @default(PENDIENTE)
+  notes     String?
+  items     SupplyRequestItem[]
+  createdAt DateTime            @default(now())
+}
+
+model SupplyRequestItem {
+  id        Int           @id @default(autoincrement())
+  requestId Int
+  productId Int
+  quantity  Decimal       @db.Decimal(10, 2)
+  unit      String
+  request   SupplyRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  product   Product       @relation(fields: [productId], references: [id])
+}
+
+model CashRegister {
+  id          Int            @id @default(autoincrement())
+  openedById  Int
+  closedById  Int?
+  openedAt    DateTime       @default(now())
+  closedAt    DateTime?
+  openingCash Decimal        @default(0) @db.Decimal(10, 2)
+  closingCash Decimal?       @db.Decimal(10, 2)
+  status      String         @default("ABIERTA")
+  movements   CashMovement[]
+}
+
+model CashMovement {
+  id             Int              @id @default(autoincrement())
+  cashRegisterId Int
+  paymentId      Int?             @unique
+  type           CashMovementType
+  category       String?
+  method         PaymentMethod?
+  concept        String
+  amount         Decimal          @db.Decimal(10, 2)
+  createdById    Int?
+  createdAt      DateTime         @default(now())
+  cashRegister   CashRegister     @relation(fields: [cashRegisterId], references: [id])
+  payment        Payment?         @relation(fields: [paymentId], references: [id])
+}
+
+model AuditLog {
+  id          Int      @id @default(autoincrement())
+  userId      Int?
+  action      String
+  module      String
+  ip          String?
+  detail      String?
+  description String?
+  user        User?    @relation(fields: [userId], references: [id])
+  createdAt   DateTime @default(now())
+}
+
+model HotelSettings {
+  id          Int      @id @default(1)
+  hotelName   String   @default("Hotel Park Plaza")
+  ruc         String?
+  address     String?
+  phone       String?
+  email       String?
+  logoUrl     String?
+  currency    String   @default("PEN")
+  taxRate     Decimal  @default(18) @db.Decimal(5, 2)
+  timezone    String   @default("America/Lima")
+  dateFormat  String   @default("dd/MM/yyyy")
+  updatedAt   DateTime @updatedAt
+}
+

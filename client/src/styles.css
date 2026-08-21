@@ -1,0 +1,147 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  color: #111111;
+  background: #F7F8F6;
+  font-family: Roboto, Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid #1E7D4B;
+  outline-offset: 2px;
+}
+
+.sidebar-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sidebar-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+}
+
+img,
+svg,
+canvas,
+video {
+  max-width: 100%;
+}
+
+table {
+  width: 100%;
+}
+
+@media (max-width: 1024px) {
+  .shadow-drawer {
+    max-width: min(100%, calc(100vw - 1rem));
+  }
+}
+
+@media (max-width: 768px) {
+  html,
+  body,
+  #root {
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  main {
+    min-width: 0;
+  }
+
+  .rounded-card,
+  .rounded-panel,
+  .rounded-modal {
+    border-radius: 12px;
+  }
+
+  .shadow-drawer {
+    width: min(100%, calc(100vw - 1rem)) !important;
+    max-width: min(100%, calc(100vw - 1rem)) !important;
+  }
+
+  .fixed.inset-0 > aside,
+  .fixed.inset-0 > section {
+    max-width: min(100%, calc(100vw - 1rem));
+  }
+
+  form,
+  section,
+  article,
+  aside,
+  div {
+    min-width: 0;
+  }
+
+  input,
+  select,
+  textarea,
+  button {
+    max-width: 100%;
+  }
+
+  button,
+  a[role="button"] {
+    min-height: 40px;
+  }
+
+  .overflow-x-auto table {
+    min-width: 680px;
+  }
+}
+
+@media (max-width: 480px) {
+  body {
+    font-size: 13px;
+  }
+
+  .p-6 {
+    padding: 1rem;
+  }
+
+  .p-5 {
+    padding: 0.875rem;
+  }
+
+  .p-4 {
+    padding: 0.75rem;
+  }
+
+  .gap-6 {
+    gap: 1rem;
+  }
+
+  .gap-5 {
+    gap: 0.875rem;
+  }
+
+  .text-4xl {
+    font-size: 2rem;
+    line-height: 2.35rem;
+  }
+
+  .text-3xl {
+    font-size: 1.65rem;
+    line-height: 2rem;
+  }
+
+  .text-2xl {
+    font-size: 1.35rem;
+    line-height: 1.75rem;
+  }
+}
