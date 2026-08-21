@@ -659,8 +659,10 @@ function ResourceForm({ type, onSubmit, saving, context, prefill }) {
               <option value="">Seleccionar</option>
               {context.products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}
             </Select>
-            <Input label="Cantidad" type="number" min="1" value={form.quantity} onChange={(event) => update("quantity", event.target.value)} required />
+            <Input label="Cantidad" type="number" min="0.0001" step="0.0001" value={form.quantity} onChange={(event) => update("quantity", event.target.value)} required />
             <Input label="Costo" type="number" min="0" step="0.01" value={form.cost} onChange={(event) => update("cost", event.target.value)} required />
+            <Input label="Codigo lote proveedor" value={form.supplierLotCode} onChange={(event) => update("supplierLotCode", event.target.value)} />
+            <Input label="Vencimiento" type="date" value={form.expiresAt} onChange={(event) => update("expiresAt", event.target.value)} />
           </>
         ) : null}
         {type === "pagos" || type === "caja" ? (
@@ -921,7 +923,7 @@ function defaultForm(type) {
   const forms = {
     cochera: { spaceId: "", plate: "", brand: "", model: "" },
     proveedores: { ruc: "", name: "", phone: "", email: "", status: "ACTIVO" },
-    compras: { supplierId: "", productId: "", quantity: "1", cost: "0" },
+    compras: { supplierId: "", productId: "", quantity: "1", cost: "0", supplierLotCode: "", expiresAt: "" },
     pagos: { clientId: "", reservationId: "", stayId: "", eventId: "", area: "RECEPCION", concept: "", method: "EFECTIVO", amount: "" },
     facturacion: { clientId: "", paymentId: "", type: "BOLETA", series: "B001", subtotal: "", tax: "", total: "" },
     caja: { type: "INGRESO", concept: "", method: "EFECTIVO", amount: "" },
@@ -935,7 +937,7 @@ function normalizePayload(type, form) {
   if (type === "compras") {
     return {
       supplierId: form.supplierId,
-      items: [{ productId: form.productId, quantity: form.quantity, cost: form.cost }]
+      items: [{ productId: form.productId, quantity: form.quantity, cost: form.cost, supplierLotCode: form.supplierLotCode, expiresAt: form.expiresAt }]
     };
   }
   return form;

@@ -11,7 +11,7 @@ import { Input as UiInput, PageHeader, Select as UiSelect, Tabs } from "../../co
 import { useAuth } from "../../context/AuthContext";
 
 const emptyProduct = { name: "", categoryId: "", area: "RESTAURANTE", unit: "unidad", stock: 0, minStock: 0, cost: 0, price: 0 };
-const emptyMove = { productId: "", inventoryLotId: "", expectedLotQty: "", quantity: "", cost: "", reason: "", reference: "" };
+const emptyMove = { productId: "", inventoryLotId: "", expectedLotQty: "", quantity: "", cost: "", expiresAt: "", supplierLotCode: "", reason: "", reference: "" };
 const inventoryAreas = [
   { value: "RESUMEN", label: "Todos", supported: true },
   { value: "RESTAURANTE", label: "Restaurante", supported: true },
@@ -72,7 +72,7 @@ export function InventoryPage() {
   const visibleSummary = areaSupported ? summary : { totalProducts: 0, lowStock: 0, noStock: 0, value: 0 };
   const selectedProduct = useMemo(() => visibleProducts?.find((product) => String(product.id) === String(moveForm.productId)), [visibleProducts, moveForm.productId]);
   const adjustmentLotsQuery = selectedProduct ? `/inventory/lots?productId=${selectedProduct.id}` : "/inventory/lots?productId=0";
-  const { data: adjustmentLots, reload: reloadAdjustmentLots } = useFetch(adjustmentLotsQuery, { initialData: [], enabled: mode === "AJUSTE" && Boolean(selectedProduct) });
+  const { data: adjustmentLots, reload: reloadAdjustmentLots } = useFetch(adjustmentLotsQuery, { initialData: [], enabled: ["AJUSTE", "ENTRADA"].includes(mode) && Boolean(selectedProduct) });
   const sectionTabs = useMemo(() => sectionTabsFor(effectiveArea), [effectiveArea]);
   const productionRows = effectiveArea === "RESTAURANTE" ? productions || [] : [];
   const preparationRows = effectiveArea === "BARTENDER" ? recipes || [] : [];
@@ -292,7 +292,7 @@ function EditProductDrawer({ allProducts, product, setProduct, categories, onClo
 }
 
 function MovementFormDrawer({ mode, form, setForm, products, product, lots, onSubmit, onCancel }) {
-  const selectedLot = mode === "AJUSTE" ? lots.find((lot) => String(lot.id) === String(form.inventoryLotId)) : null;
+  const selectedLot = ["AJUSTE", "ENTRADA"].includes(mode) ? lots.find((lot) => String(lot.id) === String(form.inventoryLotId)) : null;
   const quantity = Number(form.quantity || 0);
   const current = Number(mode === "AJUSTE" ? selectedLot?.currentQty || 0 : product?.stock || 0);
   const resulting = mode === "ENTRADA" ? current + quantity : mode === "SALIDA" ? current - quantity : quantity;
@@ -300,11 +300,18 @@ function MovementFormDrawer({ mode, form, setForm, products, product, lots, onSu
   const title = mode === "ENTRADA" ? "Registrar entrada" : mode === "SALIDA" ? "Registrar salida" : "Ajustar inventario";
   const submitLabel = mode === "ENTRADA" ? "Registrar entrada" : mode === "SALIDA" ? "Registrar salida" : "Registrar ajuste";
   const hasCount = form.quantity !== "";
-  const canSubmit = product && quantity >= 0 && resulting >= 0 && (mode !== "AJUSTE" ? quantity > 0 : selectedLot && form.reason && hasCount);
+  const canSubmit = product && quantity >= 0 && resulting >= 0 && (mode === "AJUSTE" ? selectedLot && form.reason && hasCount : mode === "ENTRADA" ? quantity > 0 && form.reason && form.cost !== "" : quantity > 0);
   const handleProductChange = (productId) => setForm({ ...form, productId, inventoryLotId: "", expectedLotQty: "", quantity: "" });
   const handleLotChange = (inventoryLotId) => {
     const lot = lots.find((item) => String(item.id) === String(inventoryLotId));
-    setForm({ ...form, inventoryLotId, expectedLotQty: lot?.currentQty || "" });
+    setForm({
+      ...form,
+      inventoryLotId,
+      expectedLotQty: lot?.currentQty || "",
+      cost: mode === "ENTRADA" && lot ? lot.unitCost : form.cost,
+      expiresAt: mode === "ENTRADA" && lot?.expiresAt ? lot.expiresAt.slice(0, 10) : form.expiresAt,
+      supplierLotCode: mode === "ENTRADA" && lot?.supplierLotCode ? lot.supplierLotCode : form.supplierLotCode
+    });
   };
   return (
     <InventoryDrawer eyebrow="Inventario" title={title} onClose={onCancel}>
@@ -317,10 +324,19 @@ function MovementFormDrawer({ mode, form, setForm, products, product, lots, onSu
               {lots.map((lot) => <option key={lot.id} value={lot.id}>{formatLotOption(lot, product.unit)}</option>)}
             </Select>
           ) : null}
+          {mode === "ENTRADA" && product ? (
+            <Select label="Lote existente opcional" value={form.inventoryLotId} onChange={handleLotChange} required={false}>
+              <option value="">Crear lote nuevo</option>
+              {lots.map((lot) => <option key={lot.id} value={lot.id}>{formatLotOption(lot, product.unit)}</option>)}
+            </Select>
+          ) : null}
           {mode === "AJUSTE" && selectedLot ? <ReadOnlyField label="Stock registrado del lote" value={formatSmartQty(selectedLot.currentQty, product?.unit)} /> : null}
+          {mode === "ENTRADA" && selectedLot ? <ReadOnlyField label="Lote seleccionado" value={`${selectedLot.code} · ${formatSmartQty(selectedLot.currentQty, product?.unit)}`} /> : null}
           {product && mode !== "AJUSTE" ? <ReadOnlyField label={mode === "SALIDA" ? "Stock disponible" : "Stock actual"} value={formatSmartQty(product.stock, product.unit)} /> : null}
-          <Input label={mode === "AJUSTE" ? "Stock fisico contado" : "Cantidad"} type="number" min={mode === "AJUSTE" ? "0" : "0.01"} step={mode === "AJUSTE" ? "0.0001" : "0.01"} value={form.quantity} onChange={(nextQuantity) => setForm({ ...form, quantity: nextQuantity })} />
+          <Input label={mode === "AJUSTE" ? "Stock fisico contado" : "Cantidad"} type="number" min={mode === "AJUSTE" ? "0" : "0.0001"} step={mode === "SALIDA" ? "0.01" : "0.0001"} value={form.quantity} onChange={(nextQuantity) => setForm({ ...form, quantity: nextQuantity })} />
           {mode === "ENTRADA" ? <Input label="Costo unitario" type="number" step="0.01" value={form.cost} onChange={(cost) => setForm({ ...form, cost })} /> : null}
+          {mode === "ENTRADA" ? <Input label="Vencimiento" type="date" value={form.expiresAt} onChange={(expiresAt) => setForm({ ...form, expiresAt })} required={false} /> : null}
+          {mode === "ENTRADA" ? <Input label="Codigo lote proveedor" value={form.supplierLotCode} onChange={(supplierLotCode) => setForm({ ...form, supplierLotCode })} required={false} /> : null}
           <Select label="Motivo" value={form.reason} onChange={(reason) => setForm({ ...form, reason })}>
             <option value="">Seleccionar</option>
             {movementReasons(mode).map((reason) => <option key={reason} value={reason}>{reason}</option>)}
@@ -917,7 +933,7 @@ function Metric({ icon, label, value }) { return <div className="rounded-card bo
 function Action({ icon, label, onClick }) { return <button className="inline-flex items-center gap-2 rounded-button border border-park-border px-4 py-2 text-sm font-black text-park-green hover:bg-park-light" onClick={onClick}>{icon}{label}</button>; }
 function Label({ text }) { return <label className="mb-1 block text-xs font-black uppercase text-park-muted">{text}</label>; }
 function Input({ label, value, onChange, ...props }) { return <div><Label text={label} /><input className="h-11 w-full rounded-input border border-park-border px-3 text-sm outline-none focus:border-park-green focus:ring-2 focus:ring-park-green/15" value={value} onChange={(event) => onChange(event.target.value)} required {...props} /></div>; }
-function Select({ label, value, onChange, children }) { return <div><Label text={label} /><select className="h-11 w-full rounded-input border border-park-border px-3 text-sm outline-none focus:border-park-green focus:ring-2 focus:ring-park-green/15" value={value} onChange={(event) => onChange(event.target.value)} required>{children}</select></div>; }
+function Select({ label, value, onChange, children, ...props }) { return <div><Label text={label} /><select className="h-11 w-full rounded-input border border-park-border px-3 text-sm outline-none focus:border-park-green focus:ring-2 focus:ring-park-green/15" value={value} onChange={(event) => onChange(event.target.value)} required {...props}>{children}</select></div>; }
 function areaLabel(value) { return value ? value.replaceAll("_", " ") : "-"; }
 function movementUser(move) {
   if (move.createdBy) return `${move.createdBy.firstName} ${move.createdBy.lastName}`;

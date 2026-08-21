@@ -863,6 +863,7 @@ model Supplier {
   address   String?
   status    String     @default("ACTIVO")
   purchases Purchase[]
+  inventoryLots InventoryLot[]
   createdAt DateTime   @default(now())
 }
 
@@ -884,6 +885,7 @@ model PurchaseItem {
   productId  Int
   quantity   Decimal       @db.Decimal(10, 2)
   cost       Decimal       @db.Decimal(10, 2)
+  supplierLotCode String?
   expiresAt  DateTime?
   purchase   Purchase      @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
   product    Product       @relation(fields: [productId], references: [id])
@@ -893,6 +895,8 @@ model PurchaseItem {
 model InventoryLot {
   id             Int       @id @default(autoincrement())
   productId      Int
+  supplierId      Int?
+  supplierLotCode String?
   code           String    @unique
   initialQty     Decimal   @db.Decimal(14, 4)
   currentQty     Decimal   @db.Decimal(14, 4)
@@ -905,9 +909,12 @@ model InventoryLot {
   updatedAt      DateTime  @updatedAt
 
   product        Product                   @relation(fields: [productId], references: [id])
+  supplier       Supplier?                 @relation(fields: [supplierId], references: [id], onDelete: SetNull)
   purchaseItem   PurchaseItem?             @relation(fields: [purchaseItemId], references: [id], onDelete: SetNull)
   allocations    OrderStockLotAllocation[]
   movements      InventoryMovement[]
+
+  @@index([supplierId, productId, supplierLotCode, expiresAt, unitCost], map: "InventoryLot_supplier_identity_idx")
 }
 
 model SupplyRequest {

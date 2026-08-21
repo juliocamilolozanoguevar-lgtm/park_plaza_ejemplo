@@ -1,7 +1,8 @@
 import bcrypt from "bcrypt";
+import { Prisma } from "@prisma/client";
 import { prisma } from "../config/prisma.js";
 import { HttpError, notFound } from "../utils/httpError.js";
-import { registerMovement } from "./inventory.service.js";
+import { recordInventoryEntry, resolvePurchaseLot, roundMoney, roundQty, withInventoryEntryTransaction } from "./inventory-entry.service.js";
 
 const money = (value) => Number(value || 0);
 
@@ -100,7 +101,7 @@ export function listPurchases() {
 export async function createPurchase(data, userId) {
   const items = data.items || [];
   if (!items.length) throw new HttpError(422, "La compra debe incluir al menos un producto.");
-  const total = items.reduce((sum, item) => sum + money(item.quantity) * money(item.cost), 0);
+  const total = items.reduce((sum, item) => sum.plus(roundQty(item.quantity).times(roundMoney(item.cost))), new Prisma.Decimal(0));
   return prisma.purchase.create({
     data: {
       supplierId: Number(data.supplierId),
@@ -110,9 +111,10 @@ export async function createPurchase(data, userId) {
       items: {
         create: items.map((item) => ({
           productId: Number(item.productId),
-          quantity: money(item.quantity),
-          cost: money(item.cost),
-          expiresAt: item.expiresAt ? new Date(item.expiresAt) : null
+          quantity: roundQty(item.quantity),
+          cost: roundMoney(item.cost),
+          expiresAt: item.expiresAt ? new Date(item.expiresAt) : null,
+          supplierLotCode: item.supplierLotCode || null
         }))
       }
     },
@@ -121,39 +123,30 @@ export async function createPurchase(data, userId) {
 }
 
 export async function receivePurchase(id, userId) {
-  const purchase = await prisma.purchase.findUnique({
-    where: { id },
-    include: { items: { include: { product: true } }, supplier: true }
-  });
-  if (!purchase) throw notFound("Compra no encontrada.");
-  if (purchase.status === "RECIBIDA") throw new HttpError(422, "La compra ya fue recibida.");
+  return withInventoryEntryTransaction(async (tx) => {
+    const purchase = await tx.purchase.findUnique({
+      where: { id },
+      include: { supplier: true, items: { include: { product: true } } }
+    });
+    if (!purchase) throw notFound("Compra no encontrada.");
+    if (purchase.status === "RECIBIDA") throw new HttpError(422, "La compra ya fue recibida.");
 
-  return prisma.$transaction(async (tx) => {
-      for (const item of purchase.items) {
-        const lotCode = `LOT-P${purchase.id}-I${item.id}`;
-        
-        await tx.inventoryLot.create({
-          data: {
-            productId: item.productId,
-            code: lotCode,
-            initialQty: item.quantity,
-            currentQty: item.quantity,
-            unitCost: item.cost,
-            expiresAt: item.expiresAt,
-            purchaseItemId: item.id
-          }
-        });
+    for (const item of purchase.items) {
+      if (!item.product) throw notFound("Producto no encontrado.");
+      const lot = await resolvePurchaseLot(tx, purchase, item);
+      await recordInventoryEntry(tx, {
+        productId: item.productId,
+        lotId: lot.id,
+        quantity: item.quantity,
+        unitCost: item.cost,
+        type: "ENTRADA_COMPRA",
+        origin: "COMPRA",
+        reason: "Recepcion de compra",
+        reference: `COMPRA:${purchase.id}:ITEM:${item.id}`,
+        userId
+      });
+    }
 
-        await registerMovement("ENTRADA_COMPRA", {
-          productId: item.productId,
-          quantity: item.quantity,
-          cost: item.cost, // Updates Product.cost
-          unitCost: item.cost, // Records historical unitCost for movement
-          origin: "COMPRA",
-          reason: "Recepcion de compra",
-          reference: `COMPRA:${purchase.id}`
-        }, userId, tx);
-      }
     return tx.purchase.update({
       where: { id },
       data: { status: "RECIBIDA", receivedAt: new Date() },
