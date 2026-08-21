@@ -143,6 +143,10 @@ async function createProductionPair(category, suffix, inputStock = "0", outputSt
   return { input, output };
 }
 
+function isFinalProductionCode(code) {
+  return /^PROD-\d{4}-\d{6}$/.test(code);
+}
+
 async function getNextProductionId() {
   const rows = await prisma.$queryRaw`
     SELECT last_value, is_called
@@ -236,6 +240,30 @@ async function run() {
   await assert(eq(await lotQty(rollbackLot.id), "5"), "P. Rollback conserva InventoryLot.currentQty original");
   await assert(eq(await productStock(pairP.input.id), "5"), "P. Rollback conserva Product.stock del insumo");
   await assert((await productStock(pairP.output.id)).equals(rollbackOutputBefore), "P. Rollback conserva Product.stock del output");
+
+  const pairCC1 = await createProductionPair(category, "CC_ONE", "8", "0");
+  const pairCC2 = await createProductionPair(category, "CC_TWO", "8", "0");
+  await createLot(pairCC1.input, "CC_ONE_LOT", "8");
+  await createLot(pairCC2.input, "CC_TWO_LOT", "8");
+  const concurrentResults = await Promise.allSettled([
+    createProduction({ inputProductId: pairCC1.input.id, outputProductId: pairCC1.output.id, inputQty: "3.0000", outputQty: "2.5000", notes: `${PREFIX}CC_ONE` }, TEST_USER_ID),
+    createProduction({ inputProductId: pairCC2.input.id, outputProductId: pairCC2.output.id, inputQty: "3.0000", outputQty: "2.5000", notes: `${PREFIX}CC_TWO` }, TEST_USER_ID)
+  ]);
+  await assert(concurrentResults.every((result) => result.status === "fulfilled"), "CC. Dos producciones concurrentes validas terminan fulfilled", JSON.stringify(concurrentResults.map((result) => result.status)));
+  const [concurrentA, concurrentB] = concurrentResults.map((result) => result.value);
+  await assert(concurrentA.id !== concurrentB.id, "CC. Producciones concurrentes tienen ProductionBatch distinto");
+  await assert(concurrentA.code !== concurrentB.code, "CC. Producciones concurrentes tienen code distinto", `${concurrentA.code}, ${concurrentB.code}`);
+  await assert(isFinalProductionCode(concurrentA.code) && isFinalProductionCode(concurrentB.code), "CC. Codigos concurrentes respetan formato final", `${concurrentA.code}, ${concurrentB.code}`);
+  await assert(
+    Boolean(await prisma.inventoryLot.findUnique({ where: { code: `PROD-${concurrentA.id}` } }))
+      && Boolean(await prisma.inventoryLot.findUnique({ where: { code: `PROD-${concurrentB.id}` } })),
+    "CC. Producciones concurrentes crean correctamente su lote de salida"
+  );
+  await assertStockMatchesLots(pairCC1.input.id, "CC. Produccion concurrente 1 mantiene Product.stock = SUM(lotes)");
+  await assertStockMatchesLots(pairCC1.output.id, "CC. Output concurrente 1 mantiene Product.stock = SUM(lotes)");
+  await assertStockMatchesLots(pairCC2.input.id, "CC. Produccion concurrente 2 mantiene Product.stock = SUM(lotes)");
+  await assertStockMatchesLots(pairCC2.output.id, "CC. Output concurrente 2 mantiene Product.stock = SUM(lotes)");
+  console.log(`CONCURRENT_CODES=${concurrentA.code},${concurrentB.code}`);
 
   const negativeLots = await prisma.inventoryLot.count({ where: { product: { name: { startsWith: PREFIX } }, currentQty: { lt: 0 } } });
   const negativeProducts = await prisma.product.count({ where: { name: { startsWith: PREFIX }, stock: { lt: 0 } } });

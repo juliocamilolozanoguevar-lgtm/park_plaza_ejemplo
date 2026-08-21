@@ -1,5 +1,6 @@
 import { prisma } from "../config/prisma.js";
 import { Prisma } from "@prisma/client";
+import { randomUUID } from "node:crypto";
 import { HttpError, notFound } from "../utils/httpError.js";
 import { getAvailableLotsForProduct } from "./inventory-lot.service.js";
 
@@ -15,6 +16,10 @@ export function roundQty(value) {
 
 function sameUnit(inputProduct, outputProduct) {
   return String(inputProduct.unit).trim().toLowerCase() === String(outputProduct.unit).trim().toLowerCase();
+}
+
+function productionCodeFromId(id, date = new Date()) {
+  return `PROD-${date.getFullYear()}-${String(id).padStart(6, "0")}`;
 }
 
 function isSerializableConflict(error) {
@@ -259,12 +264,11 @@ export async function createProduction(data, userId) {
     const wasteQty = roundQty(inputQty.minus(outputQty));
     const yieldPercent = roundQty(outputQty.dividedBy(inputQty).times(100));
     
-    const count = await tx.productionBatch.count();
-    const code = `PROD-${new Date().getFullYear()}-${String(count + 1).padStart(4, "0")}`;
+    const temporaryCode = `PROD-TMP-${randomUUID()}`;
 
-    const production = await tx.productionBatch.create({
+    const draftProduction = await tx.productionBatch.create({
       data: {
-        code,
+        code: temporaryCode,
         area: inputProduct.area,
         inputProductId,
         outputProductId,
@@ -275,6 +279,13 @@ export async function createProduction(data, userId) {
         notes: data.notes || null,
         createdById: userId || null
       },
+      include: includeProduction
+    });
+
+    const code = productionCodeFromId(draftProduction.id);
+    const production = await tx.productionBatch.update({
+      where: { id: draftProduction.id },
+      data: { code },
       include: includeProduction
     });
 
