@@ -229,7 +229,7 @@ export async function reserveOrderStock(orderId, userId, db = prisma) {
           });
         }
         if (order.stockReservation?.status === "CONSUMIDA") {
-          throw new HttpError(422, "Este pedido ya consumio inventario.");
+          throw new HttpError(422, "Este pedido ya ha sido procesado (CONSUMIDA o CANCELADA) y no puede reservar inventario.");
         }
 
         if (order.stockReservation?.status === "LIBERADA") {
