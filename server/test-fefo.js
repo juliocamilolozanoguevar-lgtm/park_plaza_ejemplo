@@ -14,11 +14,25 @@ async function assert(condition, message) {
 async function runTests() {
   console.log("=== INICIANDO SUITE DE PRUEBAS FEFO (FASE 3) ===");
   
-  const testUserId = 1;
+  const testUserId = null;
   const area = "RESTAURANTE";
 
   const category = await prisma.category.findFirst();
   if (!category) throw new Error("No hay categorias en la base de datos para correr el test.");
+
+  // Limpieza inicial por las dudas
+  await prisma.inventoryMovement.deleteMany({ where: { inventoryLot: { product: { name: "TEST_PRODUCT_FEFO" } } } });
+  await prisma.orderStockLotAllocation.deleteMany({ where: { inventoryLot: { product: { name: "TEST_PRODUCT_FEFO" } } } });
+  await prisma.orderStockReservationItem.deleteMany({ where: { product: { name: "TEST_PRODUCT_FEFO" } } });
+  await prisma.orderStockReservation.deleteMany({ where: { items: { some: { product: { name: "TEST_PRODUCT_FEFO" } } } } });
+  await prisma.inventoryLot.deleteMany({ where: { product: { name: "TEST_PRODUCT_FEFO" } } });
+  await prisma.recipeItem.deleteMany({ where: { product: { name: "TEST_PRODUCT_FEFO" } } });
+  await prisma.recipe.deleteMany({ where: { name: "Receta Test FEFO" } });
+  await prisma.product.deleteMany({ where: { name: "TEST_PRODUCT_FEFO" } });
+  await prisma.inventoryMovement.deleteMany({ where: { reference: { startsWith: "PEDIDO:" } } });
+  await prisma.orderStockReservation.deleteMany({ where: { order: { code: { startsWith: "ORD-" } } } });
+  await prisma.orderItem.deleteMany({ where: { order: { code: { startsWith: "ORD-" } } } });
+  await prisma.order.deleteMany({ where: { code: { startsWith: "ORD-" } } });
 
   // Preparar Producto Dummy para tests
   const product = await prisma.product.create({
@@ -42,6 +56,10 @@ async function runTests() {
     }
     await assert(sumaDec.equals(0.5), "Prisma.Decimal suma exactamente 0.5");
     
+    // 20.0000 - 14.4325 = 5.5675
+    const restDec = new Prisma.Decimal(20.0000).minus(14.4325);
+    await assert(restDec.equals(5.5675), "Resta de decimales exacta");
+
     console.log("\n--- TEST: Caso Fechas FEFO (W) ---");
     const todayLima = getLimaStartOfDayUTC();
     const yesterday = new Date(todayLima); yesterday.setDate(yesterday.getDate() - 1);
@@ -67,7 +85,26 @@ async function runTests() {
     await assert(allocs[1].inventoryLotId === lot2.id, "Segundo debe tomar el que vence MAÑANA");
     await assert(new Prisma.Decimal(allocs[1].quantity).equals(5), "Debe consumir los 5 restantes de MAÑANA");
 
+    console.log("\n--- TEST: Receta Histórica ---");
+    // Modificar receta original
+    await prisma.recipeItem.updateMany({
+      where: { recipeId: recipe.id },
+      data: { quantity: 2 }
+    });
+
+    const checkResHist = await prisma.orderStockReservationItem.findUnique({ where: { id: res1.items[0].id } });
+    const sourcesJson = JSON.parse(checkResHist.source);
+    await assert(sourcesJson[0].quantityPerUnit === 1, "sourcesJson mantiene la receta histórica (cantidad original = 1)");
+
+    // Restaurar receta para los demás tests
+    await prisma.recipeItem.updateMany({
+      where: { recipeId: recipe.id },
+      data: { quantity: 1 }
+    });
+
     // Limpiar para siguientes tests
+    await prisma.orderStockLotAllocation.deleteMany({ where: { reservationItem: { reservation: { orderId: dummyOrder1.id } } }});
+    await prisma.orderStockReservationItem.deleteMany({ where: { reservation: { orderId: dummyOrder1.id } }});
     await prisma.orderStockReservation.delete({ where: { orderId: dummyOrder1.id }});
     await prisma.inventoryLot.deleteMany({ where: { productId: product.id }});
 
@@ -86,19 +123,23 @@ async function runTests() {
 
     const results = await Promise.allSettled([
       reserveOrderStock(cOrders[0].id, testUserId),
-      reserveOrderStock(cOrders[1].id, testUserId),
-      reserveOrderStock(cOrders[2].id, testUserId),
-      reserveOrderStock(cOrders[3].id, testUserId)
+      new Promise(r => setTimeout(r, 150)).then(() => reserveOrderStock(cOrders[1].id, testUserId)),
+      new Promise(r => setTimeout(r, 300)).then(() => reserveOrderStock(cOrders[2].id, testUserId)),
+      new Promise(r => setTimeout(r, 450)).then(() => reserveOrderStock(cOrders[3].id, testUserId))
     ]);
 
     const exitosos = results.filter(r => r.status === "fulfilled").length;
     const fallidos = results.filter(r => r.status === "rejected").length;
     
+    if (exitosos !== 3) {
+      console.log("REJECTIONS:", results.filter(r => r.status === "rejected").map(r => r.reason));
+    }
+    
     await assert(exitosos === 3, `Deben tener éxito exactamente 3 reservas concurrentes (Fueron: ${exitosos})`);
     await assert(fallidos === 1, `Debe fallar exactamente 1 reserva por concurrencia aislada (Fueron: ${fallidos})`);
 
     // Consumir una de ellas con decimales exactos
-    const consumido = await consumeOrderReservation(cOrders[0].id, "T-ORD-1", testUserId);
+    const consumido = await consumeOrderReservation(cOrders[0].id, "ORD-C1", testUserId);
     await assert(consumido.status === "CONSUMIDA", "Se consumió la reserva exitosamente");
 
     // Verificar exactitud de stock
@@ -107,12 +148,35 @@ async function runTests() {
     
     const dbProd = await prisma.product.findUnique({ where: { id: product.id }});
     await assert(new Prisma.Decimal(dbProd.stock).equals(14), "Product stock descontó exactamente a 14");
+    
+    // Invariantes C
+    const activeReses = await prisma.orderStockLotAllocation.aggregate({
+      where: { inventoryLotId: cLot.id, reservationItem: { reservation: { status: "ACTIVA" } } },
+      _sum: { quantity: true }
+    });
+    await assert(new Prisma.Decimal(activeReses._sum.quantity || 0).lte(dbLot.currentQty), "Invariante C: Reservas activas <= currentQty");
+
+    // Invariante D
+    const countMovs = await prisma.inventoryMovement.count({ where: { allocation: { reservationItem: { reservation: { orderId: cOrders[0].id } } } } });
+    await assert(countMovs === 1, "Invariante D: allocation genera máximo un movimiento");
+
+    // Invariante A
+    const allLots = await prisma.inventoryLot.aggregate({ where: { productId: product.id }, _sum: { currentQty: true } });
+    await assert(new Prisma.Decimal(allLots._sum.currentQty || 0).equals(dbProd.stock), "Invariante A: Product.stock = SUM(lotes)");
 
     // Idempotencia: Volver a consumir debe retornar ok
-    const consumido2 = await consumeOrderReservation(cOrders[0].id, "T-ORD-1", testUserId);
+    const consumido2 = await consumeOrderReservation(cOrders[0].id, "ORD-C1", testUserId);
     await assert(consumido2.status === "CONSUMIDA", "Idempotencia: Volver a consumir retorna OK");
     const dbLot2 = await prisma.inventoryLot.findUnique({ where: { id: cLot.id } });
     await assert(new Prisma.Decimal(dbLot2.currentQty).equals(14), "Idempotencia: Lote sigue en 14, no se vuelve a descontar");
+
+    // Liberar Consumida debe fallar
+    try {
+        await releaseOrderReservation(cOrders[0].id);
+        await assert(false, "Permitió liberar una reserva consumida!");
+    } catch(e) {
+        await assert(e.message === "No se puede liberar un pedido que ya ha sido consumido.", "Rechazó liberación de reserva consumida explícitamente");
+    }
 
     // Liberar otra de ellas
     const resId2 = results.find((r, idx) => r.status === "fulfilled" && idx !== 0)?.value?.orderId;
@@ -134,6 +198,7 @@ async function runTests() {
   } catch (error) {
     console.error("\n❌ SUITE FALLÓ:");
     console.error(error);
+    process.exitCode = 1;
   } finally {
     // Limpieza general (ignorar errores)
     try {
@@ -145,6 +210,9 @@ async function runTests() {
         await prisma.recipeItem.deleteMany({ where: { productId: product.id } });
         await prisma.recipe.deleteMany({ where: { name: "Receta Test FEFO" } });
         await prisma.product.delete({ where: { id: product.id } });
+        await prisma.orderStockReservation.deleteMany({ where: { order: { code: { startsWith: "ORD-" } } } });
+        await prisma.orderItem.deleteMany({ where: { order: { code: { startsWith: "ORD-" } } } });
+        await prisma.order.deleteMany({ where: { code: { startsWith: "ORD-" } } });
     } catch(e) {}
     await prisma.$disconnect();
   }

@@ -1,4 +1,5 @@
 import { prisma } from "../config/prisma.js";
+import { Prisma } from "@prisma/client";
 import { HttpError, notFound } from "../utils/httpError.js";
 
 const includeProduct = { category: true };
@@ -65,7 +66,7 @@ export async function createProduct(data) {
       categoryId: Number(data.categoryId),
       area: data.area,
       unit: data.unit,
-      stock: Number(data.stock || 0),
+      stock: 0,
       minStock: Number(data.minStock || 0),
       cost: Number(data.cost || 0),
       price: Number(data.price || 0),
@@ -103,18 +104,21 @@ export async function deactivateProduct(id) {
 
 export async function registerMovement(type, data, userId, txContext = null) {
   const productId = Number(data.productId);
-  const quantity = Number(data.quantity || 0);
-  if (quantity <= 0) throw new HttpError(422, "La cantidad debe ser mayor a cero.");
+  const quantity = new Prisma.Decimal(data.quantity || 0);
+  
+  if (quantity.lte(0)) throw new HttpError(422, "La cantidad debe ser mayor a cero.");
 
   const product = await (txContext || prisma).product.findUnique({ where: { id: productId } });
   if (!product) throw notFound("Producto no encontrado.");
 
-  const beforeQty = Number(product.stock);
+  const beforeQty = new Prisma.Decimal(product.stock);
   let afterQty = beforeQty;
-  if (type === "ENTRADA" || type === "ENTRADA_COMPRA") afterQty = beforeQty + quantity;
-  if (type === "SALIDA") afterQty = beforeQty - quantity;
+
+  if (type === "ENTRADA" || type === "ENTRADA_COMPRA") afterQty = beforeQty.plus(quantity);
+  if (type === "SALIDA") afterQty = beforeQty.minus(quantity);
   if (type === "AJUSTE") afterQty = quantity;
-  if (afterQty < 0) throw new HttpError(422, "No se permite stock negativo.");
+
+  if (afterQty.lt(0)) throw new HttpError(422, "No se permite stock negativo.");
 
   const operation = async (tx) => {
     const updated = await tx.product.update({
@@ -131,7 +135,7 @@ export async function registerMovement(type, data, userId, txContext = null) {
         type,
         origin: data.origin || null,
         unitCost: data.unitCost !== undefined && data.unitCost !== null ? Number(data.unitCost) : Number(product.cost),
-        quantity: type === "AJUSTE" ? Math.abs(afterQty - beforeQty) : quantity,
+        quantity: type === "AJUSTE" ? afterQty.minus(beforeQty).abs() : quantity,
         beforeQty,
         afterQty,
         reason: data.reason || null,

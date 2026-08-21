@@ -112,7 +112,7 @@ export async function createProduction(data, userId) {
     if (productionUsedQty.gt(0)) {
       await registerMovement("SALIDA", {
         productId: inputProductId,
-        quantity: productionUsedQty.toNumber(), // Convertido para la versión actual de registerMovement
+        quantity: productionUsedQty,
         origin: "PRODUCCION",
         reason: `Materia prima usada en produccion ${code}`,
         reference: `PRODUCCION:${production.id}:INSUMO`
@@ -122,7 +122,7 @@ export async function createProduction(data, userId) {
     if (wasteQty.gt(0)) {
       await registerMovement("SALIDA", {
         productId: inputProductId,
-        quantity: wasteQty.toNumber(),
+        quantity: wasteQty,
         origin: "MERMA",
         reason: `Merma de produccion ${code}`,
         reference: `MERMA:PROD_${production.id}`
@@ -131,7 +131,7 @@ export async function createProduction(data, userId) {
 
     await registerMovement("ENTRADA", {
       productId: outputProductId,
-      quantity: outputQty.toNumber(),
+      quantity: outputQty,
       origin: "PRODUCCION",
       reason: `Producto obtenido en produccion ${code}. Merma ${wasteQty.toNumber()} ${inputProduct.unit}`,
       reference: `PRODUCCION:${production.id}:OBTENIDO`

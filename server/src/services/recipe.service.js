@@ -212,12 +212,13 @@ export async function buildOrderRecipePlan(orderOrId, db = prisma) {
 
 export async function reserveOrderStock(orderId, userId, db = prisma) {
   let attempts = 0;
-  while (attempts < 3) {
+  const maxAttempts = 10;
+  while (attempts < maxAttempts) {
     try {
       return await db.$transaction(async (tx) => {
         const order = await tx.order.findUnique({
           where: { id: orderId },
-          include: { stockReservation: true }
+          include: { stockReservation: true, items: true }
         });
         if (!order) throw notFound("Pedido no encontrado.");
         
@@ -309,9 +310,10 @@ export async function reserveOrderStock(orderId, userId, db = prisma) {
         });
       }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }); 
     } catch (error) {
-      if (error.code === 'P2034' && attempts < 2) {
+      if (error.code === 'P2034' && attempts < maxAttempts - 1) {
         attempts++;
-        await new Promise(res => setTimeout(res, 100 * Math.pow(2, attempts))); 
+        const jitter = Math.floor(Math.random() * 300);
+        await new Promise(res => setTimeout(res, 100 * attempts + jitter)); 
         continue;
       }
       throw error;
@@ -352,30 +354,38 @@ export async function consumeOrderReservation(orderId, orderCode, userId, db = p
 
     for (const item of reservation.items) {
       for (const allocation of item.allocations) {
-        const lot = await tx.inventoryLot.findUnique({ where: { id: allocation.inventoryLotId }});
-        if (!lot) throw new HttpError(500, "Lote asignado ya no existe");
-
         const qty = new Prisma.Decimal(allocation.quantity);
-        const currentQty = new Prisma.Decimal(lot.currentQty);
-        
-        if (currentQty.minus(qty).lt(0)) {
-          throw new HttpError(500, `Inconsistencia crítica: El lote ${lot.code} se sobregiraría negativamente al consumirlo`);
+
+        // Descuento atómico del Lote
+        const updateLot = await tx.$executeRaw`
+          UPDATE "InventoryLot"
+          SET "currentQty" = "currentQty" - ${qty}
+          WHERE id = ${allocation.inventoryLotId}
+          AND "currentQty" >= ${qty}
+        `;
+
+        if (updateLot === 0) {
+          throw new HttpError(500, `Inconsistencia critica: El lote ID ${allocation.inventoryLotId} no existe o se sobregiraria negativamente al consumir ${qty}`);
         }
 
-        const afterLotQty = currentQty.minus(qty);
-        await tx.inventoryLot.update({
-          where: { id: lot.id },
-          data: { currentQty: afterLotQty }
-        });
+        // Descuento atómico del Producto Global
+        const updateProd = await tx.$executeRaw`
+          UPDATE "Product"
+          SET stock = stock - ${qty}
+          WHERE id = ${item.productId}
+          AND stock >= ${qty}
+        `;
 
+        if (updateProd === 0) {
+          throw new HttpError(500, `Inconsistencia critica: El producto ID ${item.productId} no existe o se sobregiraria negativamente al consumir ${qty}`);
+        }
+
+        // Leer datos actuales para guardar historial
+        const lot = await tx.inventoryLot.findUnique({ where: { id: allocation.inventoryLotId }});
         const prod = await tx.product.findUnique({ where: { id: item.productId }});
-        const currentProdStock = new Prisma.Decimal(prod.stock);
-        const afterProdStock = currentProdStock.minus(qty);
-        
-        await tx.product.update({
-          where: { id: prod.id },
-          data: { stock: afterProdStock }
-        });
+
+        const afterProdStock = new Prisma.Decimal(prod.stock);
+        const currentProdStock = afterProdStock.plus(qty);
 
         await tx.inventoryMovement.create({
           data: {
@@ -410,7 +420,10 @@ export async function releaseOrderReservation(orderId, db = prisma) {
 
     if (updateResult === 0) {
       const checkRes = await tx.orderStockReservation.findUnique({ where: { orderId } });
-      if (!checkRes || checkRes.status === "CONSUMIDA") return checkRes; 
+      if (!checkRes) return checkRes;
+      if (checkRes.status === "CONSUMIDA") {
+        throw new HttpError(422, "No se puede liberar un pedido que ya ha sido consumido.");
+      }
       return checkRes; 
     }
 
