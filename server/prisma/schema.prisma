@@ -838,10 +838,10 @@ model ProductionBatch {
   area            InventoryArea @default(RESTAURANTE)
   inputProductId  Int
   outputProductId Int
-  inputQty        Decimal       @db.Decimal(10, 2)
-  outputQty       Decimal       @db.Decimal(10, 2)
-  wasteQty        Decimal       @db.Decimal(10, 2)
-  yieldPercent    Decimal       @db.Decimal(5, 2)
+  inputQty        Decimal       @db.Decimal(14, 4)
+  outputQty       Decimal       @db.Decimal(14, 4)
+  wasteQty        Decimal       @db.Decimal(14, 4)
+  yieldPercent    Decimal       @db.Decimal(9, 4)
   status          String        @default("FINALIZADA")
   notes           String?
   createdById     Int?
