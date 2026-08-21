@@ -1,5 +1,6 @@
 import * as service from "../services/inventory.service.js";
 import * as lotService from "../services/inventory-lot.service.js";
+import * as lossService from "../services/inventory-loss.service.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { audit } from "../utils/audit.js";
 
@@ -48,10 +49,9 @@ export const exit = asyncHandler(async (req, res) => {
 });
 
 export const loss = asyncHandler(async (req, res) => {
-  const result = await service.registerMovement("SALIDA", {
+  const result = await lossService.registerInventoryLoss({
     ...req.body,
-    origin: "PERDIDA",
-    reason: `Perdida extraordinaria: ${req.body.reason || "Sin motivo"}`,
+    reason: req.body.reason || "Sin motivo",
     reference: req.body.reference || "PERDIDA_OPERATIVA"
   }, req.user?.id);
   await audit(req, "INVENTARIO", "PERDIDA_OPERATIVA", result.product.name);
