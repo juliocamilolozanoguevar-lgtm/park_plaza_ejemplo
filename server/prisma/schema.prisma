@@ -883,7 +883,7 @@ model PurchaseItem {
   id         Int           @id @default(autoincrement())
   purchaseId Int
   productId  Int
-  quantity   Decimal       @db.Decimal(10, 2)
+  quantity   Decimal       @db.Decimal(14, 4)
   cost       Decimal       @db.Decimal(10, 2)
   supplierLotCode String?
   expiresAt  DateTime?

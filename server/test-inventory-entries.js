@@ -258,6 +258,48 @@ async function run() {
   await createAndReceivePurchase({ supplier: supplierA, product: productL, quantity: "1.00", cost: "10.00", expiresAt: expiryA, userId: user.id });
   await assert((await lotsForProduct(productL.id)).length === 2, "L. Sin supplierLotCode crea lote interno nuevo");
 
+  const productPurchaseDecimal = await createTestProduct(category, "PURCHASE_DECIMAL_00050", "0", "kg", "1.00");
+  const decimalPurchase = await createAndReceivePurchase({
+    supplier: supplierA,
+    product: productPurchaseDecimal,
+    quantity: "0.0050",
+    cost: "1.00",
+    expiresAt: expiryA,
+    supplierLotCode: `${PREFIX}PURCHASE_DECIMAL`,
+    userId: user.id
+  });
+  const decimalItem = await prisma.purchaseItem.findUnique({ where: { id: decimalPurchase.item.id } });
+  const decimalLot = decimalPurchase.movement.inventoryLot;
+  await assert(eq(decimalItem.quantity, "0.0050"), "Compra 0.0050 conserva PurchaseItem.quantity = 0.0050");
+  await assert(eq(decimalLot.initialQty, "0.0050"), "Compra 0.0050 conserva InventoryLot.initialQty = 0.0050");
+  await assert(eq(decimalLot.currentQty, "0.0050"), "Compra 0.0050 conserva InventoryLot.currentQty = 0.0050");
+  await assert(eq(await productStock(productPurchaseDecimal.id), "0.0050"), "Compra 0.0050 conserva Product.stock = 0.0050");
+  await assert(eq(decimalPurchase.movement.quantity, "0.0050"), "Compra 0.0050 conserva InventoryMovement.quantity = 0.0050");
+  await assertStockMatchesLots(productPurchaseDecimal.id, "Compra 0.0050 mantiene Product.stock = SUM(lotes)");
+
+  const productCancelled = await createTestProduct(category, "CANCELLED_PURCHASE", "0", "kg", "2.00");
+  const cancelledPurchase = await createPurchase({
+    supplierId: supplierA.id,
+    status: "CANCELADA",
+    items: [{
+      productId: productCancelled.id,
+      quantity: "2.0000",
+      cost: "2.00",
+      expiresAt: expiryA,
+      supplierLotCode: `${PREFIX}CANCELLED_LOT`
+    }]
+  }, user.id);
+  await assertRejects(
+    () => receivePurchase(cancelledPurchase.id, user.id),
+    "Compra CANCELADA no puede recibirse",
+    "cancelada no puede recibirse"
+  );
+  const cancelledAfter = await prisma.purchase.findUnique({ where: { id: cancelledPurchase.id } });
+  await assert(cancelledAfter.status === "CANCELADA", "Compra cancelada conserva status CANCELADA");
+  await assert(eq(await productStock(productCancelled.id), "0.0000"), "Compra cancelada no modifica Product.stock");
+  await assert((await prisma.inventoryLot.count({ where: { productId: productCancelled.id } })) === 0, "Compra cancelada no crea lote");
+  await assert((await prisma.inventoryMovement.count({ where: { productId: productCancelled.id } })) === 0, "Compra cancelada no crea movimiento");
+
   const productM = await createTestProduct(category, "M_MANUAL_NEW", "0", "kg", "5.00");
   const manual = await registerInventoryEntry({
     productId: productM.id,

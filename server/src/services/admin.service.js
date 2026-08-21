@@ -130,6 +130,7 @@ export async function receivePurchase(id, userId) {
     });
     if (!purchase) throw notFound("Compra no encontrada.");
     if (purchase.status === "RECIBIDA") throw new HttpError(422, "La compra ya fue recibida.");
+    if (purchase.status === "CANCELADA") throw new HttpError(422, "La compra cancelada no puede recibirse.");
 
     for (const item of purchase.items) {
       if (!item.product) throw notFound("Producto no encontrado.");
