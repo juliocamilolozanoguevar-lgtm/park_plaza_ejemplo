@@ -123,9 +123,9 @@ async function runTests() {
 
     const results = await Promise.allSettled([
       reserveOrderStock(cOrders[0].id, testUserId),
-      new Promise(r => setTimeout(r, 150)).then(() => reserveOrderStock(cOrders[1].id, testUserId)),
-      new Promise(r => setTimeout(r, 300)).then(() => reserveOrderStock(cOrders[2].id, testUserId)),
-      new Promise(r => setTimeout(r, 450)).then(() => reserveOrderStock(cOrders[3].id, testUserId))
+      reserveOrderStock(cOrders[1].id, testUserId),
+      reserveOrderStock(cOrders[2].id, testUserId),
+      reserveOrderStock(cOrders[3].id, testUserId)
     ]);
 
     const exitosos = results.filter(r => r.status === "fulfilled").length;
@@ -139,7 +139,8 @@ async function runTests() {
     await assert(fallidos === 1, `Debe fallar exactamente 1 reserva por concurrencia aislada (Fueron: ${fallidos})`);
 
     // Consumir una de ellas con decimales exactos
-    const consumido = await consumeOrderReservation(cOrders[0].id, "ORD-C1", testUserId);
+    const firstSuccessId = results.find(r => r.status === "fulfilled").value.orderId;
+    const consumido = await consumeOrderReservation(firstSuccessId, "ORD-CX", testUserId);
     await assert(consumido.status === "CONSUMIDA", "Se consumió la reserva exitosamente");
 
     // Verificar exactitud de stock
@@ -157,7 +158,7 @@ async function runTests() {
     await assert(new Prisma.Decimal(activeReses._sum.quantity || 0).lte(dbLot.currentQty), "Invariante C: Reservas activas <= currentQty");
 
     // Invariante D
-    const countMovs = await prisma.inventoryMovement.count({ where: { allocation: { reservationItem: { reservation: { orderId: cOrders[0].id } } } } });
+    const countMovs = await prisma.inventoryMovement.count({ where: { allocation: { reservationItem: { reservation: { orderId: firstSuccessId } } } } });
     await assert(countMovs === 1, "Invariante D: allocation genera máximo un movimiento");
 
     // Invariante A
@@ -165,21 +166,21 @@ async function runTests() {
     await assert(new Prisma.Decimal(allLots._sum.currentQty || 0).equals(dbProd.stock), "Invariante A: Product.stock = SUM(lotes)");
 
     // Idempotencia: Volver a consumir debe retornar ok
-    const consumido2 = await consumeOrderReservation(cOrders[0].id, "ORD-C1", testUserId);
+    const consumido2 = await consumeOrderReservation(firstSuccessId, "ORD-CX", testUserId);
     await assert(consumido2.status === "CONSUMIDA", "Idempotencia: Volver a consumir retorna OK");
     const dbLot2 = await prisma.inventoryLot.findUnique({ where: { id: cLot.id } });
     await assert(new Prisma.Decimal(dbLot2.currentQty).equals(14), "Idempotencia: Lote sigue en 14, no se vuelve a descontar");
 
     // Liberar Consumida debe fallar
     try {
-        await releaseOrderReservation(cOrders[0].id);
+        await releaseOrderReservation(firstSuccessId);
         await assert(false, "Permitió liberar una reserva consumida!");
     } catch(e) {
         await assert(e.message === "No se puede liberar un pedido que ya ha sido consumido.", "Rechazó liberación de reserva consumida explícitamente");
     }
 
-    // Liberar otra de ellas
-    const resId2 = results.find((r, idx) => r.status === "fulfilled" && idx !== 0)?.value?.orderId;
+    // Idempotencia: Reservar de nuevo una ACTIVA debe retornar la misma sin duplicar
+    const resId2 = results.find(r => r.status === "fulfilled" && r.value.orderId !== firstSuccessId)?.value?.orderId;
     if (resId2) {
         const liberado = await releaseOrderReservation(resId2);
         await assert(liberado.status === "LIBERADA", "Se liberó reserva correctamente");

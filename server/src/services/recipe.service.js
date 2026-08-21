@@ -232,6 +232,10 @@ export async function reserveOrderStock(orderId, userId, db = prisma) {
           throw new HttpError(422, "Este pedido ya consumio inventario.");
         }
 
+        if (order.stockReservation?.status === "LIBERADA") {
+          throw new HttpError(422, "Este pedido fue liberado/cancelado y no puede volver a reservar inventario.");
+        }
+
         const plan = await buildOrderRecipePlan(order, tx);
         if (!plan.canPrepare) {
           throw new HttpError(422, "No hay stock suficiente o falta configurar receta.", {
@@ -239,10 +243,6 @@ export async function reserveOrderStock(orderId, userId, db = prisma) {
             missingRecipes: plan.missingRecipes,
             issues: plan.issues
           });
-        }
-
-        if (order.stockReservation) {
-          await tx.orderStockReservation.delete({ where: { orderId } });
         }
 
         const reservation = await tx.orderStockReservation.create({
