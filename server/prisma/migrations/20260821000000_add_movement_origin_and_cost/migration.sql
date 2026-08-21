@@ -1,4 +1,4 @@
-﻿-- CreateEnum
+-- CreateEnum
 CREATE TYPE "ReservationOrigin" AS ENUM ('WEB', 'RECEPCION', 'ADMIN');
 
 -- CreateEnum

@@ -704,8 +704,8 @@ model Product {
   categoryId    Int
   area          InventoryArea        @default(RESTAURANTE)
   unit          String
-  stock         Decimal              @default(0) @db.Decimal(10, 2)
-  minStock      Decimal              @default(0) @db.Decimal(10, 2)
+  stock         Decimal              @default(0) @db.Decimal(14, 4)
+  minStock      Decimal              @default(0) @db.Decimal(14, 4)
   cost          Decimal              @default(0) @db.Decimal(10, 2)
   price         Decimal              @default(0) @db.Decimal(10, 2)
   status        String               @default("ACTIVO")
@@ -736,7 +736,7 @@ model OrderStockReservation {
   createdById Int?
   consumedAt  DateTime?
   releasedAt  DateTime?
-  order       Order                       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order       Order                       @relation(fields: [orderId], references: [id], onDelete: Restrict)
   items       OrderStockReservationItem[]
   createdAt   DateTime                    @default(now())
   updatedAt   DateTime                    @updatedAt
@@ -748,11 +748,13 @@ model OrderStockReservationItem {
   id            Int                   @id @default(autoincrement())
   reservationId Int
   productId     Int
-  quantity      Decimal               @db.Decimal(10, 2)
+  quantity      Decimal               @db.Decimal(14, 4)
   unit          String
   source        String?
-  reservation   OrderStockReservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  sourcesJson   Json?
+  reservation   OrderStockReservation @relation(fields: [reservationId], references: [id], onDelete: Restrict)
   product       Product               @relation(fields: [productId], references: [id])
+  allocations   OrderStockLotAllocation[]
 
   @@index([productId])
 }
@@ -773,7 +775,7 @@ model RecipeItem {
   id        Int     @id @default(autoincrement())
   recipeId  Int
   productId Int
-  quantity  Decimal @db.Decimal(10, 2)
+  quantity  Decimal @db.Decimal(14, 4)
   unit      String
   recipe    Recipe  @relation(fields: [recipeId], references: [id], onDelete: Cascade)
   product   Product @relation(fields: [productId], references: [id])
@@ -798,16 +800,36 @@ model InventoryMovement {
   productId   Int
   type        InventoryMovementType
   origin      MovementOrigin?
-  quantity    Decimal               @db.Decimal(10, 2)
-  beforeQty   Decimal               @db.Decimal(10, 2)
-  afterQty    Decimal               @db.Decimal(10, 2)
-  unitCost    Decimal?              @db.Decimal(10, 2)
-  reason      String?
-  reference   String?
-  createdById Int?
-  product     Product               @relation(fields: [productId], references: [id])
-  createdBy   User?                 @relation(fields: [createdById], references: [id])
-  createdAt   DateTime              @default(now())
+  quantity       Decimal                   @db.Decimal(14, 4)
+  beforeQty      Decimal                   @db.Decimal(14, 4)
+  afterQty       Decimal                   @db.Decimal(14, 4)
+  unitCost       Decimal?                  @db.Decimal(10, 2)
+  reason         String?
+  reference      String?
+  createdById    Int?
+  inventoryLotId Int?
+  allocationId   Int?                      @unique
+  product        Product                   @relation(fields: [productId], references: [id])
+  createdBy      User?                     @relation(fields: [createdById], references: [id])
+  inventoryLot   InventoryLot?             @relation(fields: [inventoryLotId], references: [id], onDelete: Restrict)
+  allocation     OrderStockLotAllocation?  @relation(fields: [allocationId], references: [id], onDelete: Restrict)
+  createdAt      DateTime                  @default(now())
+}
+
+model OrderStockLotAllocation {
+  id                Int                       @id @default(autoincrement())
+  reservationItemId Int
+  inventoryLotId    Int
+  quantity          Decimal                   @db.Decimal(14, 4)
+  createdAt         DateTime                  @default(now())
+
+  reservationItem   OrderStockReservationItem @relation(fields: [reservationItemId], references: [id], onDelete: Restrict)
+  inventoryLot      InventoryLot              @relation(fields: [inventoryLotId], references: [id], onDelete: Restrict)
+  movement          InventoryMovement?
+
+  @@unique([reservationItemId, inventoryLotId])
+  @@index([inventoryLotId])
+  @@index([reservationItemId])
 }
 
 model ProductionBatch {
@@ -872,8 +894,8 @@ model InventoryLot {
   id             Int       @id @default(autoincrement())
   productId      Int
   code           String    @unique
-  initialQty     Decimal   @db.Decimal(10, 2)
-  currentQty     Decimal   @db.Decimal(10, 2)
+  initialQty     Decimal   @db.Decimal(14, 4)
+  currentQty     Decimal   @db.Decimal(14, 4)
   unitCost       Decimal   @db.Decimal(10, 2)
   receivedAt     DateTime  @default(now())
   expiresAt      DateTime?
@@ -882,8 +904,10 @@ model InventoryLot {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  product        Product       @relation(fields: [productId], references: [id])
-  purchaseItem   PurchaseItem? @relation(fields: [purchaseItemId], references: [id], onDelete: SetNull)
+  product        Product                   @relation(fields: [productId], references: [id])
+  purchaseItem   PurchaseItem?             @relation(fields: [purchaseItemId], references: [id], onDelete: SetNull)
+  allocations    OrderStockLotAllocation[]
+  movements      InventoryMovement[]
 }
 
 model SupplyRequest {
