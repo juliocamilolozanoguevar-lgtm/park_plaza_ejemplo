@@ -11,7 +11,7 @@ import { Input as UiInput, PageHeader, Select as UiSelect, Tabs } from "../../co
 import { useAuth } from "../../context/AuthContext";
 
 const emptyProduct = { name: "", categoryId: "", area: "RESTAURANTE", unit: "unidad", stock: 0, minStock: 0, cost: 0, price: 0 };
-const emptyMove = { productId: "", quantity: "", cost: "", reason: "", reference: "" };
+const emptyMove = { productId: "", inventoryLotId: "", expectedLotQty: "", quantity: "", cost: "", reason: "", reference: "" };
 const inventoryAreas = [
   { value: "RESUMEN", label: "Todos", supported: true },
   { value: "RESTAURANTE", label: "Restaurante", supported: true },
@@ -71,6 +71,8 @@ export function InventoryPage() {
   const visibleMovements = areaSupported ? movements : [];
   const visibleSummary = areaSupported ? summary : { totalProducts: 0, lowStock: 0, noStock: 0, value: 0 };
   const selectedProduct = useMemo(() => visibleProducts?.find((product) => String(product.id) === String(moveForm.productId)), [visibleProducts, moveForm.productId]);
+  const adjustmentLotsQuery = selectedProduct ? `/inventory/lots?productId=${selectedProduct.id}` : "/inventory/lots?productId=0";
+  const { data: adjustmentLots, reload: reloadAdjustmentLots } = useFetch(adjustmentLotsQuery, { initialData: [], enabled: mode === "AJUSTE" && Boolean(selectedProduct) });
   const sectionTabs = useMemo(() => sectionTabsFor(effectiveArea), [effectiveArea]);
   const productionRows = effectiveArea === "RESTAURANTE" ? productions || [] : [];
   const preparationRows = effectiveArea === "BARTENDER" ? recipes || [] : [];
@@ -133,14 +135,25 @@ export function InventoryPage() {
     event.preventDefault();
     if (!canCreate) return setToast("No tienes permiso para registrar movimientos.");
     const endpoint = mode === "ENTRADA" ? "/inventory/entries" : mode === "SALIDA" ? "/inventory/exits" : "/inventory/adjustments";
-    await api(endpoint, { method: "POST", body: moveForm });
-    setToast("Movimiento registrado.");
-    setMoveForm(emptyMove);
-    setMode("");
-    reload();
-    reloadSummary();
-    reloadMovements();
-    reloadProductions();
+    const body = mode === "AJUSTE" ? { ...moveForm, countedQty: moveForm.quantity } : moveForm;
+    try {
+      await api(endpoint, { method: "POST", body });
+      setToast(mode === "AJUSTE" ? "Ajuste registrado." : "Movimiento registrado.");
+      setMoveForm(emptyMove);
+      setMode("");
+      reload();
+      reloadSummary();
+      reloadMovements();
+      reloadProductions();
+    } catch (error) {
+      setToast(error.message || "No se pudo registrar el movimiento.");
+      if (mode === "AJUSTE") {
+        reloadAdjustmentLots();
+        reload();
+        reloadSummary();
+        reloadMovements();
+      }
+    }
   }
 
   async function deactivateProduct() {
@@ -223,7 +236,7 @@ export function InventoryPage() {
       {activeSection === "MERMAS" ? <WasteSection filters={wasteFilters} products={visibleProducts} rows={wasteRows} setFilters={setWasteFilters} onSelect={setSelectedWaste} /> : null}
       {activeSection === "MOVIMIENTOS" ? <MovementsTable movements={visibleMovements} /> : null}
       {mode === "PRODUCTO" ? <ProductFormDrawer allProducts={allProducts} form={productForm} setForm={setProductForm} area={area} categories={categories} onSubmit={createProduct} onCancel={closeInventoryDrawers} /> : null}
-      {["ENTRADA", "SALIDA", "AJUSTE"].includes(mode) ? <MovementFormDrawer mode={mode} form={moveForm} setForm={setMoveForm} products={visibleProducts} product={selectedProduct} onSubmit={movement} onCancel={closeInventoryDrawers} /> : null}
+      {["ENTRADA", "SALIDA", "AJUSTE"].includes(mode) ? <MovementFormDrawer mode={mode} form={moveForm} setForm={setMoveForm} products={visibleProducts} product={selectedProduct} lots={adjustmentLots || []} onSubmit={movement} onCancel={closeInventoryDrawers} /> : null}
       {editingProduct ? <EditProductDrawer allProducts={allProducts} product={editingProduct} setProduct={setEditingProduct} categories={categories} onClose={closeInventoryDrawers} onSubmit={updateProduct} /> : null}
       {selectedInventoryProduct ? <ProductDetailDrawer canCreate={canCreate} canDelete={canDelete} canEdit={canEdit} product={selectedInventoryProduct} onDeactivate={setConfirmDeactivate} onEdit={openEditProduct} onMove={openMovement} onClose={closeInventoryDrawers} /> : null}
       {selectedProduction ? <ProductionDetailDrawer production={selectedProduction} movements={visibleMovements} onClose={() => setSelectedProduction(null)} /> : null}
@@ -278,29 +291,44 @@ function EditProductDrawer({ allProducts, product, setProduct, categories, onClo
   );
 }
 
-function MovementFormDrawer({ mode, form, setForm, products, product, onSubmit, onCancel }) {
+function MovementFormDrawer({ mode, form, setForm, products, product, lots, onSubmit, onCancel }) {
+  const selectedLot = mode === "AJUSTE" ? lots.find((lot) => String(lot.id) === String(form.inventoryLotId)) : null;
   const quantity = Number(form.quantity || 0);
-  const current = Number(product?.stock || 0);
+  const current = Number(mode === "AJUSTE" ? selectedLot?.currentQty || 0 : product?.stock || 0);
   const resulting = mode === "ENTRADA" ? current + quantity : mode === "SALIDA" ? current - quantity : quantity;
   const diff = mode === "AJUSTE" ? quantity - current : quantity;
   const title = mode === "ENTRADA" ? "Registrar entrada" : mode === "SALIDA" ? "Registrar salida" : "Ajustar inventario";
   const submitLabel = mode === "ENTRADA" ? "Registrar entrada" : mode === "SALIDA" ? "Registrar salida" : "Registrar ajuste";
+  const hasCount = form.quantity !== "";
+  const canSubmit = product && quantity >= 0 && resulting >= 0 && (mode !== "AJUSTE" ? quantity > 0 : selectedLot && form.reason && hasCount);
+  const handleProductChange = (productId) => setForm({ ...form, productId, inventoryLotId: "", expectedLotQty: "", quantity: "" });
+  const handleLotChange = (inventoryLotId) => {
+    const lot = lots.find((item) => String(item.id) === String(inventoryLotId));
+    setForm({ ...form, inventoryLotId, expectedLotQty: lot?.currentQty || "" });
+  };
   return (
     <InventoryDrawer eyebrow="Inventario" title={title} onClose={onCancel}>
       <form className="flex min-h-0 flex-1 flex-col" onSubmit={onSubmit}>
         <div className="grid flex-1 gap-4 overflow-auto py-5">
-          <Select label="Producto" value={form.productId} onChange={(productId) => setForm({ ...form, productId })}><option value="">Seleccionar producto</option>{products.map((item) => <option key={item.id} value={item.id}>{item.name} - {formatSmartQty(item.stock, item.unit)}</option>)}</Select>
-          {product ? <ReadOnlyField label={mode === "SALIDA" ? "Stock disponible" : mode === "AJUSTE" ? "Stock registrado" : "Stock actual"} value={formatSmartQty(product.stock, product.unit)} /> : null}
-          <Input label={mode === "AJUSTE" ? "Stock fisico contado" : "Cantidad"} type="number" min="0.01" step="0.01" value={form.quantity} onChange={(nextQuantity) => setForm({ ...form, quantity: nextQuantity })} />
+          <Select label="Producto" value={form.productId} onChange={handleProductChange}><option value="">Seleccionar producto</option>{products.map((item) => <option key={item.id} value={item.id}>{item.name} - {formatSmartQty(item.stock, item.unit)}</option>)}</Select>
+          {mode === "AJUSTE" && product ? (
+            <Select label="Lote" value={form.inventoryLotId} onChange={handleLotChange}>
+              <option value="">Seleccionar lote</option>
+              {lots.map((lot) => <option key={lot.id} value={lot.id}>{formatLotOption(lot, product.unit)}</option>)}
+            </Select>
+          ) : null}
+          {mode === "AJUSTE" && selectedLot ? <ReadOnlyField label="Stock registrado del lote" value={formatSmartQty(selectedLot.currentQty, product?.unit)} /> : null}
+          {product && mode !== "AJUSTE" ? <ReadOnlyField label={mode === "SALIDA" ? "Stock disponible" : "Stock actual"} value={formatSmartQty(product.stock, product.unit)} /> : null}
+          <Input label={mode === "AJUSTE" ? "Stock fisico contado" : "Cantidad"} type="number" min={mode === "AJUSTE" ? "0" : "0.01"} step={mode === "AJUSTE" ? "0.0001" : "0.01"} value={form.quantity} onChange={(nextQuantity) => setForm({ ...form, quantity: nextQuantity })} />
           {mode === "ENTRADA" ? <Input label="Costo unitario" type="number" step="0.01" value={form.cost} onChange={(cost) => setForm({ ...form, cost })} /> : null}
           <Select label="Motivo" value={form.reason} onChange={(reason) => setForm({ ...form, reason })}>
             <option value="">Seleccionar</option>
             {movementReasons(mode).map((reason) => <option key={reason} value={reason}>{reason}</option>)}
           </Select>
           <Input label="Referencia" value={form.reference} onChange={(reference) => setForm({ ...form, reference })} required={false} />
-          {product ? <StockPreview current={current} diff={diff} mode={mode} result={resulting} unit={product.unit} /> : null}
+          {product && (mode !== "AJUSTE" || selectedLot) ? <StockPreview current={current} diff={diff} mode={mode} result={resulting} unit={product.unit} /> : null}
         </div>
-        <DrawerFooter disabled={!product || quantity <= 0 || resulting < 0} onCancel={onCancel} submitLabel={submitLabel} />
+        <DrawerFooter disabled={!canSubmit} onCancel={onCancel} submitLabel={submitLabel} />
       </form>
     </InventoryDrawer>
   );
@@ -810,6 +838,11 @@ function formatSmartQty(value, unit = "", signed = false) {
   const prefix = signed && number > 0 ? "+" : number < 0 ? "-" : "";
   if (normalizedUnit === "kg" && abs > 0 && abs < 1) return `${prefix}${trimNumber(abs * 1000)} g`;
   return `${prefix}${trimNumber(abs)} ${unit || ""}`.trim();
+}
+
+function formatLotOption(lot, unit = "") {
+  const expiry = lot.expiresAt ? new Date(lot.expiresAt).toLocaleDateString("es-PE") : "sin vencimiento";
+  return `${lot.code} · ${formatSmartQty(lot.currentQty, unit)} · vence ${expiry}`;
 }
 
 function trimNumber(value) {

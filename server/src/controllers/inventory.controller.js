@@ -1,6 +1,7 @@
 import * as service from "../services/inventory.service.js";
 import * as lotService from "../services/inventory-lot.service.js";
 import * as lossService from "../services/inventory-loss.service.js";
+import * as adjustmentService from "../services/inventory-adjustment.service.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { audit } from "../utils/audit.js";
 
@@ -59,9 +60,8 @@ export const loss = asyncHandler(async (req, res) => {
 });
 
 export const adjustment = asyncHandler(async (req, res) => {
-  const result = await service.registerMovement("AJUSTE", {
+  const result = await adjustmentService.registerInventoryAdjustment({
     ...req.body,
-    origin: "AJUSTE_MANUAL",
     reference: req.body.reference || "AJUSTE_MANUAL"
   }, req.user?.id);
   await audit(req, "INVENTARIO", "AJUSTE", result.product.name);
