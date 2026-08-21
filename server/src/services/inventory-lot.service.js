@@ -39,8 +39,8 @@ const mapLot = (lot) => ({
   status: calculateLotStatus(lot.expiresAt)
 });
 
-export async function getAvailableLotsForProduct(productId, db = prisma) {
-  const today = getLimaStartOfDayUTC();
+export async function getAvailableLotsForProduct(productId, db = prisma, now = new Date()) {
+  const today = getLimaStartOfDayUTC(now);
 
   // Find all lots that are active, have qty > 0, and are not expired
   const lots = await db.inventoryLot.findMany({
