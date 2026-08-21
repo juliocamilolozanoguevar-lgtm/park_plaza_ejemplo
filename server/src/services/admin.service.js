@@ -111,7 +111,8 @@ export async function createPurchase(data, userId) {
         create: items.map((item) => ({
           productId: Number(item.productId),
           quantity: money(item.quantity),
-          cost: money(item.cost)
+          cost: money(item.cost),
+          expiresAt: item.expiresAt ? new Date(item.expiresAt) : null
         }))
       }
     },
@@ -129,6 +130,20 @@ export async function receivePurchase(id, userId) {
 
   return prisma.$transaction(async (tx) => {
       for (const item of purchase.items) {
+        const lotCode = `LOT-P${purchase.id}-I${item.id}`;
+        
+        await tx.inventoryLot.create({
+          data: {
+            productId: item.productId,
+            code: lotCode,
+            initialQty: item.quantity,
+            currentQty: item.quantity,
+            unitCost: item.cost,
+            expiresAt: item.expiresAt,
+            purchaseItemId: item.id
+          }
+        });
+
         await registerMovement("ENTRADA_COMPRA", {
           productId: item.productId,
           quantity: item.quantity,

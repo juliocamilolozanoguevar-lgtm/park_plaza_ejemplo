@@ -1,4 +1,5 @@
 import * as service from "../services/inventory.service.js";
+import * as lotService from "../services/inventory-lot.service.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { audit } from "../utils/audit.js";
 
@@ -16,6 +17,14 @@ export const categories = asyncHandler(async (req, res) => {
 
 export const movements = asyncHandler(async (req, res) => {
   res.json(await service.listMovements(req.query));
+});
+
+export const lots = asyncHandler(async (req, res) => {
+  res.json(await lotService.listLots(req.query));
+});
+
+export const lot = asyncHandler(async (req, res) => {
+  res.json(await lotService.getLot(req.params.id));
 });
 
 export const entry = asyncHandler(async (req, res) => {

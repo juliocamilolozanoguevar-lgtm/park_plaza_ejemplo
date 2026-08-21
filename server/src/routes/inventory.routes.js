@@ -10,6 +10,8 @@ inventoryRoutes.get("/", authorize("INVENTARIO:VER"), controller.index);
 inventoryRoutes.get("/summary", authorize("INVENTARIO:VER"), controller.summary);
 inventoryRoutes.get("/categories", authorize("INVENTARIO:VER"), controller.categories);
 inventoryRoutes.get("/movements", authorize("INVENTARIO:VER"), controller.movements);
+inventoryRoutes.get("/lots", authorize("INVENTARIO:VER"), controller.lots);
+inventoryRoutes.get("/lots/:id", authorize("INVENTARIO:VER"), controller.lot);
 inventoryRoutes.post("/entries", authorize("INVENTARIO:CREAR"), controller.entry);
 inventoryRoutes.post("/exits", authorize("INVENTARIO:CREAR"), controller.exit);
 inventoryRoutes.post("/losses", authorize("INVENTARIO:CREAR", "RESTAURANTE:CREAR", "BARTENDER:CREAR"), controller.loss);

@@ -718,7 +718,8 @@ model Product {
   productionInputs ProductionBatch[] @relation("ProductionInput")
   productionOutputs ProductionBatch[] @relation("ProductionOutput")
   operationalReports OperationalReport[]
-  purchaseItems PurchaseItem[]
+  purchaseItems        PurchaseItem[]
+  inventoryLots        InventoryLot[]
   supplyItems   SupplyRequestItem[]
   createdAt     DateTime             @default(now())
   updatedAt     DateTime             @updatedAt
@@ -856,13 +857,33 @@ model Purchase {
 }
 
 model PurchaseItem {
-  id         Int      @id @default(autoincrement())
+  id         Int           @id @default(autoincrement())
   purchaseId Int
   productId  Int
-  quantity   Decimal  @db.Decimal(10, 2)
-  cost       Decimal  @db.Decimal(10, 2)
-  purchase   Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
-  product    Product  @relation(fields: [productId], references: [id])
+  quantity   Decimal       @db.Decimal(10, 2)
+  cost       Decimal       @db.Decimal(10, 2)
+  expiresAt  DateTime?
+  purchase   Purchase      @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  product    Product       @relation(fields: [productId], references: [id])
+  lot        InventoryLot?
+}
+
+model InventoryLot {
+  id             Int       @id @default(autoincrement())
+  productId      Int
+  code           String    @unique
+  initialQty     Decimal   @db.Decimal(10, 2)
+  currentQty     Decimal   @db.Decimal(10, 2)
+  unitCost       Decimal   @db.Decimal(10, 2)
+  receivedAt     DateTime  @default(now())
+  expiresAt      DateTime?
+  purchaseItemId Int?      @unique
+  active         Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  product        Product       @relation(fields: [productId], references: [id])
+  purchaseItem   PurchaseItem? @relation(fields: [purchaseItemId], references: [id], onDelete: SetNull)
 }
 
 model SupplyRequest {
