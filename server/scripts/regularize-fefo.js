@@ -13,6 +13,7 @@ async function main() {
   console.log(`Productos a evaluar: ${products.length}`);
   
   let createdLots = 0;
+  const unresolved = [];
   
   for (const product of products) {
     const prodStock = new Prisma.Decimal(product.stock);
@@ -67,13 +68,20 @@ async function main() {
           createdLots++;
           console.log(`[OK] Producto ID: ${product.id} - Creado LOT-INICIAL por ${diff.toNumber()} ${product.unit}`);
         } else {
-          console.log(`[WARN] Producto ID: ${product.id} - Ya existe LOT-INICIAL pero stock físico difiere de la suma de lotes. Se requiere revisión manual.`);
+          const message = `Producto ID: ${product.id} - Ya existe LOT-INICIAL pero stock fisico difiere de la suma de lotes. Se requiere revision manual. Diferencia: ${diff.toFixed(4)} ${product.unit}`;
+          unresolved.push(message);
+          console.log(`[WARN] ${message}`);
         }
       }
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   }
 
   console.log(`\nRegularización terminada. Se crearon ${createdLots} lotes iniciales.`);
+  if (unresolved.length) {
+    console.error(`Regularización incompleta. Casos no regularizados: ${unresolved.length}`);
+    for (const item of unresolved) console.error(`- ${item}`);
+    process.exitCode = 1;
+  }
 }
 
 main()

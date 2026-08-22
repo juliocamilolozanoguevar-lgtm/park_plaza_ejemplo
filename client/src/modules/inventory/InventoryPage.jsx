@@ -77,7 +77,7 @@ export function InventoryPage() {
   const visibleSummary = areaSupported ? summary : { totalProducts: 0, lowStock: 0, noStock: 0, value: 0 };
   const selectedProduct = useMemo(() => visibleProducts?.find((product) => String(product.id) === String(moveForm.productId)), [visibleProducts, moveForm.productId]);
   const adjustmentLotsQuery = selectedProduct ? `/inventory/lots?productId=${selectedProduct.id}` : "/inventory/lots?productId=0";
-  const { data: adjustmentLots, reload: reloadAdjustmentLots } = useFetch(adjustmentLotsQuery, { initialData: [], enabled: ["AJUSTE", "ENTRADA"].includes(mode) && Boolean(selectedProduct) });
+  const { data: adjustmentLots, reload: reloadAdjustmentLots } = useFetch(adjustmentLotsQuery, { initialData: [], enabled: ["AJUSTE", "ENTRADA", "SALIDA"].includes(mode) && Boolean(selectedProduct) });
   const sectionTabs = useMemo(() => sectionTabsFor(effectiveArea), [effectiveArea]);
   const productionRows = effectiveArea === "RESTAURANTE" ? productions || [] : [];
   const preparationRows = effectiveArea === "BARTENDER" ? recipes || [] : [];
@@ -322,7 +322,7 @@ function EditProductDrawer({ allProducts, product, setProduct, categories, onClo
 }
 
 function MovementFormDrawer({ mode, form, setForm, products, product, lots, onSubmit, onCancel }) {
-  const selectedLot = ["AJUSTE", "ENTRADA"].includes(mode) ? lots.find((lot) => String(lot.id) === String(form.inventoryLotId)) : null;
+  const selectedLot = ["AJUSTE", "ENTRADA", "SALIDA"].includes(mode) ? lots.find((lot) => String(lot.id) === String(form.inventoryLotId)) : null;
   const quantity = Number(form.quantity || 0);
   const current = Number(mode === "AJUSTE" ? selectedLot?.currentQty || 0 : product?.stock || 0);
   const resulting = mode === "ENTRADA" ? current + quantity : mode === "SALIDA" ? current - quantity : quantity;
@@ -360,8 +360,16 @@ function MovementFormDrawer({ mode, form, setForm, products, product, lots, onSu
               {lots.map((lot) => <option key={lot.id} value={lot.id}>{formatLotOption(lot, product.unit)}</option>)}
             </Select>
           ) : null}
+          {mode === "SALIDA" && product ? (
+            <Select label="Lote opcional" value={form.inventoryLotId} onChange={handleLotChange} required={false}>
+              <option value="">Usar FEFO automaticamente</option>
+              {lots.map((lot) => <option key={lot.id} value={lot.id}>{formatLotOption(lot, product.unit)}</option>)}
+            </Select>
+          ) : null}
           {mode === "AJUSTE" && selectedLot ? <ReadOnlyField label="Stock registrado del lote" value={formatSmartQty(selectedLot.currentQty, product?.unit)} /> : null}
           {mode === "ENTRADA" && selectedLot ? <ReadOnlyField label="Lote seleccionado" value={`${selectedLot.code} · ${formatSmartQty(selectedLot.currentQty, product?.unit)}`} /> : null}
+          {mode === "SALIDA" && selectedLot ? <ReadOnlyField label="Lote seleccionado" value={`${selectedLot.code} · ${formatSmartQty(selectedLot.currentQty, product?.unit)}`} /> : null}
+          {mode === "SALIDA" && product && !selectedLot ? <p className="rounded-card bg-park-green-soft px-3 py-2 text-xs font-black uppercase text-park-green">El sistema utilizara FEFO.</p> : null}
           {product && mode !== "AJUSTE" ? <ReadOnlyField label={mode === "SALIDA" ? "Stock disponible" : "Stock actual"} value={formatSmartQty(product.stock, product.unit)} /> : null}
           <Input label={mode === "AJUSTE" ? "Stock fisico contado" : "Cantidad"} type="number" min={mode === "AJUSTE" ? "0" : "0.0001"} step={mode === "SALIDA" ? "0.01" : "0.0001"} value={form.quantity} onChange={(nextQuantity) => setForm({ ...form, quantity: nextQuantity })} />
           {mode === "ENTRADA" ? <Input label="Costo unitario" type="number" step="0.01" value={form.cost} onChange={(cost) => setForm({ ...form, cost })} /> : null}
