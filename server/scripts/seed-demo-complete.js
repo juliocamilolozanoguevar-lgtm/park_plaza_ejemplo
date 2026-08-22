@@ -491,7 +491,7 @@ async function createOrders({ products, stays, users }) {
     const stay = pick(activeStays, i) || stays[0];
     
     // Distribucion de fechas desacoplada del status para garantizar ENTREGADOs hoy
-    const daysOffset = -(Math.floor(i / 2) % 4); // 0, 0, -1, -1, -2, -2, -3, -3... ensures concentration in recent days
+    const daysOffset = -(i % 3); // Ensures overlap
     const backdate = addDays(daysOffset, 12 + (i % 8));
     const userId = area === "RESTAURANTE" ? users.RESTAURANTE.id : users.BARTENDER.id;
 

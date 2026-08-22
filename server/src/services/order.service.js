@@ -42,41 +42,55 @@ export async function updateOrderStatus(id, status, userId) {
   });
   if (!order) throw notFound("Pedido no encontrado.");
 
-  if (status === "PREPARANDO" && order.status !== "PREPARANDO") {
-    await reserveOrderStock(id, userId);
-  }
-
-  if (status === "LISTO" && order.status !== "LISTO") {
-    await consumeOrderReservation(id, order.code, userId);
-  }
-
-  if (status === "CANCELADO" && !["LISTO", "ENTREGADO"].includes(order.status)) {
-    await releaseOrderReservation(id);
-  }
-
-  return prisma.$transaction(async (tx) => {
-    const updated = await tx.order.update({
-      where: { id },
-      data: { status },
-      include: includeOrder
-    });
-
-    if (status === "ENTREGADO" && order.status !== "ENTREGADO") {
-      await tx.consumption.upsert({
-        where: { orderId: id },
-        update: { status: "PENDIENTE", amount: order.total },
-        create: {
-          clientId: order.clientId,
-          stayId: order.stayId,
-          orderId: id,
-          area: order.area,
-          concept: `Pedido ${order.code}`,
-          amount: order.total,
-          status: "PENDIENTE"
+  let attempts = 0;
+  const maxAttempts = 10;
+  while (attempts < maxAttempts) {
+    try {
+      return await prisma.$transaction(async (tx) => {
+        if (status === "PREPARANDO" && order.status !== "PREPARANDO") {
+          await reserveOrderStock(id, userId, tx);
         }
-      });
-    }
 
-    return attachRecipePlan(updated, tx);
-  });
+        if (status === "LISTO" && order.status !== "LISTO") {
+          await consumeOrderReservation(id, order.code, userId, tx);
+        }
+
+        if (status === "CANCELADO" && !["LISTO", "ENTREGADO"].includes(order.status)) {
+          await releaseOrderReservation(id, tx);
+        }
+
+        const updated = await tx.order.update({
+          where: { id },
+          data: { status },
+          include: includeOrder
+        });
+
+        if (status === "ENTREGADO" && order.status !== "ENTREGADO") {
+          await tx.consumption.upsert({
+            where: { orderId: id },
+            update: { status: "PENDIENTE", amount: order.total },
+            create: {
+              clientId: order.clientId,
+              stayId: order.stayId,
+              orderId: id,
+              area: order.area,
+              concept: `Pedido ${order.code}`,
+              amount: order.total,
+              status: "PENDIENTE"
+            }
+          });
+        }
+
+        return attachRecipePlan(updated, tx);
+      }, { isolationLevel: import('@prisma/client').Prisma.TransactionIsolationLevel.Serializable });
+    } catch (e) {
+      if (e.code === "P2034" || (e.message && e.message.includes("40001"))) {
+        attempts++;
+        if (attempts >= maxAttempts) throw new HttpError(409, "Conflicto de concurrencia al actualizar pedido. Intente nuevamente.");
+        await new Promise((r) => setTimeout(r, Math.floor(Math.random() * 50) * attempts));
+        continue;
+      }
+      throw e;
+    }
+  }
 }
