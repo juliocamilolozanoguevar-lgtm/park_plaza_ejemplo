@@ -101,8 +101,8 @@ async function clearDemoData() {
   await deleteByChunks(prisma.purchaseItem, { OR: [{ productId: { in: demoProductIds } }, { purchase: { supplierId: { in: demoSupplierIds } } }] });
   await deleteByChunks(prisma.purchase, { OR: [{ supplierId: { in: demoSupplierIds } }, { createdById: { in: demoUserIds } }] });
   await deleteByChunks(prisma.inventoryLot, { OR: [{ id: { in: demoLotIds } }, { productId: { in: demoProductIds } }] });
-  await deleteByChunks(prisma.supplyRequestItem, { request: { area: { startsWith: PREFIX } } });
-  await deleteByChunks(prisma.supplyRequest, { area: { startsWith: PREFIX } });
+  await deleteByChunks(prisma.supplyRequestItem, { request: { notes: { startsWith: PREFIX } } });
+  await deleteByChunks(prisma.supplyRequest, { notes: { startsWith: PREFIX } });
   await deleteByChunks(prisma.product, { id: { in: demoProductIds } });
   await deleteByChunks(prisma.category, { name: { startsWith: PREFIX } });
   await deleteByChunks(prisma.supplier, { id: { in: demoSupplierIds } });
@@ -490,8 +490,9 @@ async function createOrders({ products, stays, users }) {
     const targetStatus = pick(states, i);
     const stay = pick(activeStays, i) || stays[0];
     
-    // Distribucion de fechas (hoy, ayer, ultimos 7 dias)
-    const backdate = addDays(-i % 7, 12 + (i % 8));
+    // Distribucion de fechas desacoplada del status para garantizar ENTREGADOs hoy
+    const daysOffset = -(Math.floor(i / 2) % 4); // 0, 0, -1, -1, -2, -2, -3, -3... ensures concentration in recent days
+    const backdate = addDays(daysOffset, 12 + (i % 8));
     const userId = area === "RESTAURANTE" ? users.RESTAURANTE.id : users.BARTENDER.id;
 
     let order = await prisma.order.upsert({
@@ -556,7 +557,7 @@ async function createSupplyRequests({ products, users }) {
     const r = reqs[i];
     const sr = await prisma.supplyRequest.create({
       data: {
-        area: `${PREFIX}${r.area}`,
+        area: r.area,
         status: r.status,
         notes: `${PREFIX}Requisicion automatica`,
         createdAt: addDays(-i, 8)
@@ -786,7 +787,7 @@ async function summary() {
     inspections: await prisma.inventoryInspection.count({ where: { product: { name: { startsWith: PREFIX } } } }),
     orders: await prisma.order.count({ where: { code: { startsWith: PREFIX } } }),
     reservations: await prisma.reservation.count({ where: { code: { startsWith: "DEMO-RSV-" } } }),
-    supplyRequests: await prisma.supplyRequest.count({ where: { area: { startsWith: PREFIX } } }),
+    supplyRequests: await prisma.supplyRequest.count({ where: { notes: { startsWith: PREFIX } } }),
     productions: await prisma.productionBatch.count({ where: { OR: [{ code: { startsWith: PREFIX } }, { inputProduct: { name: { startsWith: PREFIX } } }] } }),
     cleaningTasks: await prisma.cleaningTask.count({ where: { room: { number: { startsWith: "D" } } } }),
     maintenanceReports: await prisma.operationalReport.count({ where: { code: { startsWith: "DEMO-MNT-" } } })

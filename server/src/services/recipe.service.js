@@ -211,104 +211,110 @@ export async function buildOrderRecipePlan(orderOrId, db = prisma) {
 }
 
 export async function reserveOrderStock(orderId, userId, db = prisma) {
+  const execute = async (tx) => {
+    const order = await tx.order.findUnique({
+      where: { id: orderId },
+      include: { stockReservation: true, items: true }
+    });
+    if (!order) throw notFound("Pedido no encontrado.");
+    
+    if (order.stockReservation?.status === "ACTIVA") {
+      return tx.orderStockReservation.findUnique({
+        where: { orderId },
+        include: { items: { include: { product: true, allocations: true } } }
+      });
+    }
+    if (order.stockReservation?.status === "CONSUMIDA") {
+      throw new HttpError(422, "Este pedido ya ha sido procesado (CONSUMIDA o CANCELADA) y no puede reservar inventario.");
+    }
+
+    if (order.stockReservation?.status === "LIBERADA") {
+      throw new HttpError(422, "Este pedido fue liberado/cancelado y no puede volver a reservar inventario.");
+    }
+
+    const plan = await buildOrderRecipePlan(order, tx);
+    if (!plan.canPrepare) {
+      throw new HttpError(422, "No hay stock suficiente o falta configurar receta.", {
+        insufficient: plan.insufficient,
+        missingRecipes: plan.missingRecipes,
+        issues: plan.issues
+      });
+    }
+
+    const reservation = await tx.orderStockReservation.create({
+      data: {
+        orderId,
+        status: "ACTIVA",
+        createdById: userId || null,
+      }
+    });
+
+    for (const line of plan.requirements) {
+      const reqQty = new Prisma.Decimal(line.required);
+      
+      const resItem = await tx.orderStockReservationItem.create({
+        data: {
+          reservationId: reservation.id,
+          productId: line.productId,
+          quantity: reqQty,
+          unit: line.unit,
+          source: JSON.stringify(line.sourcesJson),
+          sourcesJson: line.sourcesJson
+        }
+      });
+
+      const lots = await getAvailableLotsForProduct(line.productId, tx);
+      let pending = reqQty;
+      
+      for (const lot of lots) {
+        if (pending.lte(0)) break;
+        
+        const allocs = await tx.orderStockLotAllocation.aggregate({
+          where: { 
+            inventoryLotId: lot.id, 
+            reservationItem: { reservation: { status: "ACTIVA" } } 
+          },
+          _sum: { quantity: true }
+        });
+        
+        const usedInLot = new Prisma.Decimal(allocs._sum.quantity || 0);
+        const lotAvail = new Prisma.Decimal(lot.currentQty).minus(usedInLot);
+        
+        if (lotAvail.lte(0)) continue;
+        
+        const toTake = Prisma.Decimal.min(pending, lotAvail);
+        
+        await tx.orderStockLotAllocation.create({
+          data: {
+            reservationItemId: resItem.id,
+            inventoryLotId: lot.id,
+            quantity: toTake
+          }
+        });
+        
+        pending = pending.minus(toTake);
+      }
+      
+      if (pending.gt(0)) {
+        throw new HttpError(409, `Concurrencia: No hay suficientes lotes disponibles para el producto ${line.productName}`);
+      }
+    }
+
+    return tx.orderStockReservation.findUnique({
+      where: { orderId },
+      include: { items: { include: { allocations: true, product: true } } }
+    });
+  };
+
+  if (typeof db.$transaction !== 'function') {
+    return execute(db);
+  }
+
   let attempts = 0;
   const maxAttempts = 10;
   while (attempts < maxAttempts) {
     try {
-      return await db.$transaction(async (tx) => {
-        const order = await tx.order.findUnique({
-          where: { id: orderId },
-          include: { stockReservation: true, items: true }
-        });
-        if (!order) throw notFound("Pedido no encontrado.");
-        
-        if (order.stockReservation?.status === "ACTIVA") {
-          return tx.orderStockReservation.findUnique({
-            where: { orderId },
-            include: { items: { include: { product: true, allocations: true } } }
-          });
-        }
-        if (order.stockReservation?.status === "CONSUMIDA") {
-          throw new HttpError(422, "Este pedido ya ha sido procesado (CONSUMIDA o CANCELADA) y no puede reservar inventario.");
-        }
-
-        if (order.stockReservation?.status === "LIBERADA") {
-          throw new HttpError(422, "Este pedido fue liberado/cancelado y no puede volver a reservar inventario.");
-        }
-
-        const plan = await buildOrderRecipePlan(order, tx);
-        if (!plan.canPrepare) {
-          throw new HttpError(422, "No hay stock suficiente o falta configurar receta.", {
-            insufficient: plan.insufficient,
-            missingRecipes: plan.missingRecipes,
-            issues: plan.issues
-          });
-        }
-
-        const reservation = await tx.orderStockReservation.create({
-          data: {
-            orderId,
-            status: "ACTIVA",
-            createdById: userId || null,
-          }
-        });
-
-        for (const line of plan.requirements) {
-          const reqQty = new Prisma.Decimal(line.required); // Ya viene de roundQty en .toNumber()
-          
-          const resItem = await tx.orderStockReservationItem.create({
-            data: {
-              reservationId: reservation.id,
-              productId: line.productId,
-              quantity: reqQty,
-              unit: line.unit,
-              source: JSON.stringify(line.sourcesJson),
-              sourcesJson: line.sourcesJson
-            }
-          });
-
-          const lots = await getAvailableLotsForProduct(line.productId, tx);
-          let pending = reqQty;
-          
-          for (const lot of lots) {
-            if (pending.lte(0)) break;
-            
-            const allocs = await tx.orderStockLotAllocation.aggregate({
-              where: { 
-                inventoryLotId: lot.id, 
-                reservationItem: { reservation: { status: "ACTIVA" } } 
-              },
-              _sum: { quantity: true }
-            });
-            
-            const usedInLot = new Prisma.Decimal(allocs._sum.quantity || 0);
-            const lotAvail = new Prisma.Decimal(lot.currentQty).minus(usedInLot);
-            
-            if (lotAvail.lte(0)) continue;
-            
-            const toTake = Prisma.Decimal.min(pending, lotAvail);
-            
-            await tx.orderStockLotAllocation.create({
-              data: {
-                reservationItemId: resItem.id,
-                inventoryLotId: lot.id,
-                quantity: toTake
-              }
-            });
-            
-            pending = pending.minus(toTake);
-          }
-          
-          if (pending.gt(0)) {
-            throw new HttpError(409, `Concurrencia: No hay suficientes lotes disponibles para el producto ${line.productName}`);
-          }
-        }
-
-        return tx.orderStockReservation.findUnique({
-          where: { orderId },
-          include: { items: { include: { allocations: true, product: true } } }
-        });
-      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }); 
+      return await db.$transaction(execute, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }); 
     } catch (error) {
       if (error.code === 'P2034' && attempts < maxAttempts - 1) {
         attempts++;
@@ -322,7 +328,7 @@ export async function reserveOrderStock(orderId, userId, db = prisma) {
 }
 
 export async function consumeOrderReservation(orderId, orderCode, userId, db = prisma) {
-  return await db.$transaction(async (tx) => {
+  const execute = async (tx) => {
     // 1. Update atómico
     const updateResult = await tx.$executeRaw`
       UPDATE "OrderStockReservation"
@@ -407,11 +413,14 @@ export async function consumeOrderReservation(orderId, orderCode, userId, db = p
     }
 
     return reservation;
-  });
+  };
+  
+  if (typeof db.$transaction !== 'function') return execute(db);
+  return await db.$transaction(execute);
 }
 
 export async function releaseOrderReservation(orderId, db = prisma) {
-  return await db.$transaction(async (tx) => {
+  const execute = async (tx) => {
     const updateResult = await tx.$executeRaw`
       UPDATE "OrderStockReservation"
       SET status = 'LIBERADA', "releasedAt" = NOW()
@@ -428,5 +437,8 @@ export async function releaseOrderReservation(orderId, db = prisma) {
     }
 
     return tx.orderStockReservation.findUnique({ where: { orderId } });
-  });
+  };
+  
+  if (typeof db.$transaction !== 'function') return execute(db);
+  return await db.$transaction(execute);
 }
