@@ -192,7 +192,7 @@ async function run() {
   await assert(eq(await lotQty(lateLot.id), "5"), "C. FEFO no consume lote posterior si no es necesario");
 
   const pairD = await createProductionPair(category, "D_EXPIRED", "11", "0");
-  await createLot(pairD.input, "D_EXPIRED_LOT", "10", { expiresAt: dateFromToday(-1) });
+  await createLot(pairD.input, "D_EXPIRED_LOT", "10", { expiresAt: dateFromToday(-2) });
   await createLot(pairD.input, "D_VALID_LOT", "1", { expiresAt: dateFromToday(10) });
   await assertRejects(
     () => createProduction({ inputProductId: pairD.input.id, outputProductId: pairD.output.id, inputQty: "2.0000", outputQty: "1.5000", notes: `${PREFIX}D` }, TEST_USER_ID),

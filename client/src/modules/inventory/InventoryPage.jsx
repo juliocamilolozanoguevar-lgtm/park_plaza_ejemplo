@@ -35,6 +35,7 @@ export function InventoryPage() {
   const [movementType, setMovementType] = useState("");
   const [activeSection, setActiveSection] = useState(isKardex ? "MOVIMIENTOS" : "ARTICULOS");
   const [wasteFilters, setWasteFilters] = useState({ productId: "", type: "", responsible: "", date: "" });
+  const [inspectionView, setInspectionView] = useState("PENDIENTE");
   const [productForm, setProductForm] = useState(emptyProduct);
   const [moveForm, setMoveForm] = useState(emptyMove);
   const [mode, setMode] = useState("");
@@ -44,6 +45,8 @@ export function InventoryPage() {
   const [selectedProduction, setSelectedProduction] = useState(null);
   const [selectedWaste, setSelectedWaste] = useState(null);
   const [selectedRecipe, setSelectedRecipe] = useState(null);
+  const [selectedInspection, setSelectedInspection] = useState(null);
+  const [resolutionNotes, setResolutionNotes] = useState("");
   const [toast, setToast] = useState("");
   const areaSupported = inventoryAreas.find((item) => item.value === area)?.supported;
   const effectiveArea = areaSupported ? area : "RESUMEN";
@@ -55,6 +58,8 @@ export function InventoryPage() {
   const { data: categories } = useFetch("/inventory/categories", { initialData: [] });
   const movementQuery = `/inventory/movements?${[areaQuery, movementType ? `type=${movementType}` : ""].filter(Boolean).join("&")}`;
   const { data: movements, reload: reloadMovements } = useFetch(movementQuery, { initialData: [] });
+  const inspectionQuery = `/inventory/inspections?${[areaQuery].filter(Boolean).join("&")}`;
+  const { data: inspections, reload: reloadInspections } = useFetch(inspectionQuery, { initialData: [] });
   const { data: productions, loading: productionsLoading, reload: reloadProductions } = useFetch(`/production?area=${effectiveArea}`, { initialData: [], enabled: effectiveArea === "RESTAURANTE" });
   const { data: recipes, loading: recipesLoading } = useFetch(`/recipes?area=${effectiveArea}&active=true`, { initialData: [], enabled: effectiveArea === "BARTENDER" });
 
@@ -77,6 +82,7 @@ export function InventoryPage() {
   const productionRows = effectiveArea === "RESTAURANTE" ? productions || [] : [];
   const preparationRows = effectiveArea === "BARTENDER" ? recipes || [] : [];
   const wasteRows = useMemo(() => filterWasteRows(buildWasteRows(productionRows, visibleMovements), wasteFilters), [productionRows, visibleMovements, wasteFilters]);
+  const inspectionRows = useMemo(() => filterInspectionRows(inspections || [], inspectionView), [inspectionView, inspections]);
   const activeDrawer = mode || (editingProduct ? "EDITAR" : "") || (selectedInventoryProduct ? "DETALLE" : "");
 
   useEffect(() => {
@@ -129,6 +135,8 @@ export function InventoryPage() {
     setMode("");
     setEditingProduct(null);
     setSelectedInventoryProduct(null);
+    setSelectedInspection(null);
+    setResolutionNotes("");
   }
 
   async function movement(event) {
@@ -145,6 +153,7 @@ export function InventoryPage() {
       reloadSummary();
       reloadMovements();
       reloadProductions();
+      reloadInspections();
     } catch (error) {
       setToast(error.message || "No se pudo registrar el movimiento.");
       if (mode === "AJUSTE") {
@@ -153,6 +162,25 @@ export function InventoryPage() {
         reloadSummary();
         reloadMovements();
       }
+    }
+  }
+
+  async function resolveRetainedProduct(nextStatus) {
+    if (!selectedInspection) return;
+    try {
+      await api(`/inventory/inspections/${selectedInspection.id}/resolve`, {
+        method: "PATCH",
+        body: { status: nextStatus, resolutionNotes }
+      });
+      setToast(nextStatus === "APTO" ? "Producto retenido devuelto al stock." : "Producto retenido declarado no apto.");
+      setSelectedInspection(null);
+      setResolutionNotes("");
+      reload();
+      reloadSummary();
+      reloadMovements();
+      reloadInspections();
+    } catch (error) {
+      setToast(error.message || "No se pudo resolver el producto retenido.");
     }
   }
 
@@ -191,7 +219,7 @@ export function InventoryPage() {
       />
       <section className="rounded-card border border-park-border bg-white p-3 shadow-card">
         <p className="mb-2 px-1 text-xs font-black uppercase text-park-muted">Areas</p>
-        <Tabs tabs={inventoryAreas.map((item) => ({ value: item.value, label: item.supported ? item.label : `${item.label} *` }))} value={area} onChange={(value) => { setArea(value); setActiveSection("ARTICULOS"); setCategoryId(""); setStockStatus(""); setMovementType(""); setMoveForm(emptyMove); setWasteFilters({ productId: "", type: "", responsible: "", date: "" }); setSelectedRecipe(null); setSelectedProduction(null); }} />
+        <Tabs tabs={inventoryAreas.map((item) => ({ value: item.value, label: item.supported ? item.label : `${item.label} *` }))} value={area} onChange={(value) => { setArea(value); setActiveSection("ARTICULOS"); setCategoryId(""); setStockStatus(""); setMovementType(""); setMoveForm(emptyMove); setWasteFilters({ productId: "", type: "", responsible: "", date: "" }); setInspectionView("PENDIENTE"); setSelectedRecipe(null); setSelectedProduction(null); setSelectedInspection(null); }} />
         {!inventoryAreas.find((item) => item.value === area)?.supported ? (
           <p className="mt-3 rounded-card bg-park-gold-soft px-3 py-2 text-sm font-semibold text-park-gold">El modelo actual de inventario aun no soporta esta area en PostgreSQL. Se muestra como seccion preparada, sin crear datos ni migraciones automaticamente.</p>
         ) : null}
@@ -234,6 +262,7 @@ export function InventoryPage() {
       {activeSection === "PRODUCCION" ? <ProductionTable movements={visibleMovements} productions={productionRows} onSelect={setSelectedProduction} /> : null}
       {activeSection === "PREPARACIONES" ? <PreparationsTable recipes={preparationRows} onSelect={setSelectedRecipe} /> : null}
       {activeSection === "MERMAS" ? <WasteSection filters={wasteFilters} products={visibleProducts} rows={wasteRows} setFilters={setWasteFilters} onSelect={setSelectedWaste} /> : null}
+      {activeSection === "RETENIDOS" ? <InspectionsSection rows={inspectionRows} value={inspectionView} onChange={setInspectionView} onSelect={setSelectedInspection} /> : null}
       {activeSection === "MOVIMIENTOS" ? <MovementsTable movements={visibleMovements} /> : null}
       {mode === "PRODUCTO" ? <ProductFormDrawer allProducts={allProducts} form={productForm} setForm={setProductForm} area={area} categories={categories} onSubmit={createProduct} onCancel={closeInventoryDrawers} /> : null}
       {["ENTRADA", "SALIDA", "AJUSTE"].includes(mode) ? <MovementFormDrawer mode={mode} form={moveForm} setForm={setMoveForm} products={visibleProducts} product={selectedProduct} lots={adjustmentLots || []} onSubmit={movement} onCancel={closeInventoryDrawers} /> : null}
@@ -242,6 +271,7 @@ export function InventoryPage() {
       {selectedProduction ? <ProductionDetailDrawer production={selectedProduction} movements={visibleMovements} onClose={() => setSelectedProduction(null)} /> : null}
       {selectedWaste ? <WasteDetailDrawer row={selectedWaste} onClose={() => setSelectedWaste(null)} /> : null}
       {selectedRecipe ? <PreparationDetailDrawer recipe={selectedRecipe} onClose={() => setSelectedRecipe(null)} /> : null}
+      {selectedInspection ? <InspectionDetailDrawer inspection={selectedInspection} notes={resolutionNotes} onNotes={setResolutionNotes} onClose={() => { setSelectedInspection(null); setResolutionNotes(""); }} onResolve={resolveRetainedProduct} /> : null}
       {confirmDeactivate ? <ConfirmDeactivateModal onCancel={() => setConfirmDeactivate(null)} onConfirm={deactivateProduct} product={confirmDeactivate} /> : null}
     </div>
   );
@@ -449,6 +479,42 @@ function WasteSection({ filters, products, rows, setFilters, onSelect }) {
   );
 }
 
+function InspectionsSection({ rows, value, onChange, onSelect }) {
+  return (
+    <div className="space-y-4">
+      <section className="rounded-card border border-park-border bg-white p-3 shadow-card">
+        <Tabs
+          tabs={[
+            { value: "PENDIENTE", label: "Pendientes" },
+            { value: "HISTORIAL", label: "Historial" }
+          ]}
+          value={value}
+          onChange={onChange}
+        />
+      </section>
+      {!rows.length ? (
+        <EmptyPanel
+          title={value === "PENDIENTE" ? "Sin productos retenidos" : "Sin historial"}
+          description={value === "PENDIENTE" ? "Los productos pendientes de revision apareceran aqui." : "Las revisiones resueltas apareceran aqui."}
+        />
+      ) : (
+        <Table columns={["Producto", "Lote", "Cantidad", "Area", "Motivo", "Fecha", "Estado", "Accion"]} rows={rows} renderRow={(row) => (
+          <tr className="cursor-pointer transition hover:bg-park-bg" key={row.id} onClick={() => onSelect(row)}>
+            <td className="px-4 py-3 font-bold text-park-black">{row.product?.name}</td>
+            <td className="px-4 py-3">{row.inventoryLot?.code || "-"}</td>
+            <td className="px-4 py-3">{formatSmartQty(row.quantity, row.product?.unit)}</td>
+            <td className="px-4 py-3">{areaLabel(row.area)}</td>
+            <td className="px-4 py-3">{row.reason}</td>
+            <td className="px-4 py-3">{formatDate(row.createdAt)}</td>
+            <td className="px-4 py-3"><StatusBadge value={row.status} /></td>
+            <td className="px-4 py-3"><button className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-black text-park-green" onClick={(event) => { event.stopPropagation(); onSelect(row); }} type="button"><Eye size={14} />Revisar</button></td>
+          </tr>
+        )} />
+      )}
+    </div>
+  );
+}
+
 function MovementsTable({ movements }) {
   return (
     <Table columns={["Fecha", "Producto", "Tipo", "Cantidad", "Usuario", "Referencia"]} rows={movements || []} renderRow={(move) => (
@@ -461,6 +527,55 @@ function MovementsTable({ movements }) {
         <td className="px-4 py-3">{formatReference(move.reference) || move.reason || "-"}</td>
       </tr>
     )} />
+  );
+}
+
+function InspectionDetailDrawer({ inspection, notes, onNotes, onClose, onResolve }) {
+  const available = inspection.stock?.availableQty ?? inspection.product?.stock ?? 0;
+  const retained = inspection.stock?.pendingQty ?? (inspection.status === "PENDIENTE" ? inspection.quantity : 0);
+  const physical = inspection.stock?.physicalQty ?? Number(available || 0) + Number(retained || 0);
+  const pending = inspection.status === "PENDIENTE";
+  return (
+    <InventoryDrawer eyebrow="Producto retenido" title={inspection.product?.name || "Producto"} subtitle={inspection.inventoryLot?.code} onClose={onClose}>
+      <div className="flex-1 overflow-auto py-5">
+        <Panel title="Informacion">
+          <DetailLine label="Producto" value={inspection.product?.name} />
+          <DetailLine label="Lote" value={inspection.inventoryLot?.code} />
+          <DetailLine label="Cantidad retenida" value={formatSmartQty(inspection.quantity, inspection.product?.unit)} />
+          <DetailLine label="Area" value={areaLabel(inspection.area)} />
+          <DetailLine label="Estado" value={<StatusBadge value={inspection.status} />} />
+        </Panel>
+        <Panel title="Reporte">
+          <DetailLine label="Motivo" value={inspection.reason} />
+          <DetailLine label="Observaciones" value={inspection.notes || "-"} />
+          <DetailLine label="Ubicacion fisica" value={inspection.storageLocation || "-"} />
+          <DetailLine label="Reportado por" value={inspectionUser(inspection.createdBy, inspection.createdById)} />
+          <DetailLine label="Fecha" value={formatDate(inspection.createdAt)} />
+        </Panel>
+        <Panel title="Stock controlado">
+          <DetailLine label="Disponible actual" value={formatSmartQty(available, inspection.product?.unit)} />
+          <DetailLine label="Retenido pendiente" value={formatSmartQty(retained, inspection.product?.unit)} />
+          <DetailLine label="Fisico controlado" value={formatSmartQty(physical, inspection.product?.unit)} />
+        </Panel>
+        {!pending ? (
+          <Panel title="Resolucion">
+            <DetailLine label="Resultado" value={<StatusBadge value={inspection.status} />} />
+            <DetailLine label="Resuelto por" value={inspectionUser(inspection.resolvedBy, inspection.resolvedById)} />
+            <DetailLine label="Fecha resolucion" value={formatDate(inspection.resolvedAt)} />
+            <DetailLine label="Notas" value={inspection.resolutionNotes || "-"} />
+          </Panel>
+        ) : (
+          <Panel title="Resolver">
+            <Input label="Notas de resolucion" value={notes} onChange={onNotes} required={false} />
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              <button className="rounded-button bg-park-green px-4 py-2 text-sm font-black text-white" onClick={() => onResolve("APTO")} type="button">Declarar APTO</button>
+              <button className="rounded-button border border-red-200 px-4 py-2 text-sm font-black text-park-danger" onClick={() => onResolve("NO_APTO")} type="button">Declarar NO APTO</button>
+            </div>
+            <p className="mt-3 text-xs font-semibold text-park-muted">APTO devuelve la cantidad al stock disponible. NO APTO conserva la salida ya realizada al retener.</p>
+          </Panel>
+        )}
+      </div>
+    </InventoryDrawer>
   );
 }
 
@@ -614,6 +729,7 @@ function sectionTabsFor(area) {
     return [
       { value: "ARTICULOS", label: "Articulos" },
       { value: "PRODUCCION", label: "Produccion" },
+      { value: "RETENIDOS", label: "Productos retenidos" },
       { value: "MOVIMIENTOS", label: "Movimientos" }
     ];
   }
@@ -621,13 +737,19 @@ function sectionTabsFor(area) {
     return [
       { value: "ARTICULOS", label: "Articulos" },
       { value: "PREPARACIONES", label: "Preparaciones" },
+      { value: "RETENIDOS", label: "Productos retenidos" },
       { value: "MOVIMIENTOS", label: "Movimientos" }
     ];
   }
   return [
     { value: "ARTICULOS", label: "Articulos" },
+    { value: "RETENIDOS", label: "Productos retenidos" },
     { value: "MOVIMIENTOS", label: "Movimientos" }
   ];
+}
+
+function filterInspectionRows(rows, view) {
+  return (rows || []).filter((row) => view === "PENDIENTE" ? row.status === "PENDIENTE" : row.status !== "PENDIENTE");
 }
 
 function buildWasteRows(productions, movements) {
@@ -935,6 +1057,10 @@ function Label({ text }) { return <label className="mb-1 block text-xs font-blac
 function Input({ label, value, onChange, ...props }) { return <div><Label text={label} /><input className="h-11 w-full rounded-input border border-park-border px-3 text-sm outline-none focus:border-park-green focus:ring-2 focus:ring-park-green/15" value={value} onChange={(event) => onChange(event.target.value)} required {...props} /></div>; }
 function Select({ label, value, onChange, children, ...props }) { return <div><Label text={label} /><select className="h-11 w-full rounded-input border border-park-border px-3 text-sm outline-none focus:border-park-green focus:ring-2 focus:ring-park-green/15" value={value} onChange={(event) => onChange(event.target.value)} required {...props}>{children}</select></div>; }
 function areaLabel(value) { return value ? value.replaceAll("_", " ") : "-"; }
+function inspectionUser(user, userId) {
+  if (user) return `${user.firstName} ${user.lastName}`;
+  return userId ? `Usuario ${userId}` : "Sistema";
+}
 function movementUser(move) {
   if (move.createdBy) return `${move.createdBy.firstName} ${move.createdBy.lastName}`;
   return move.createdById ? `Usuario ${move.createdById}` : "Sistema";

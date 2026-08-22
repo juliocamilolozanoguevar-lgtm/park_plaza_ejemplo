@@ -3,6 +3,7 @@ import * as lotService from "../services/inventory-lot.service.js";
 import * as lossService from "../services/inventory-loss.service.js";
 import * as adjustmentService from "../services/inventory-adjustment.service.js";
 import * as entryService from "../services/inventory-entry.service.js";
+import * as inspectionService from "../services/inventory-inspection.service.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { audit } from "../utils/audit.js";
 
@@ -28,6 +29,26 @@ export const lots = asyncHandler(async (req, res) => {
 
 export const lot = asyncHandler(async (req, res) => {
   res.json(await lotService.getLot(req.params.id));
+});
+
+export const inspections = asyncHandler(async (req, res) => {
+  res.json(await inspectionService.listInspections(req.query));
+});
+
+export const inspection = asyncHandler(async (req, res) => {
+  res.json(await inspectionService.getInspection(req.params.id));
+});
+
+export const retainForReview = asyncHandler(async (req, res) => {
+  const result = await inspectionService.retainForReview(req.body, req.user?.id);
+  await audit(req, "INVENTARIO", "RETENER_REVISION", result.inspection.product.name);
+  res.status(201).json(result);
+});
+
+export const resolveInspection = asyncHandler(async (req, res) => {
+  const result = await inspectionService.resolveInspection(req.params.id, req.body, req.user?.id);
+  await audit(req, "INVENTARIO", `RESOLVER_RETENIDO_${result.inspection.status}`, result.inspection.product.name);
+  res.json(result);
 });
 
 export const entry = asyncHandler(async (req, res) => {

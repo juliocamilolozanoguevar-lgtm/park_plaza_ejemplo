@@ -207,7 +207,7 @@ async function run() {
   await assert(movementsC.every((movement) => movement.inventoryLotId), "I. Todos los movimientos por perdida tienen inventoryLotId");
 
   const productD = await createProduct(category, "D_EXPIRED", "6.0000", "kg", "5.00");
-  const lotDExpired = await createLot(productD, "D_EXPIRED_LOT", "5.0000", { expiresAt: dateFromToday(-1) });
+  const lotDExpired = await createLot(productD, "D_EXPIRED_LOT", "5.0000", { expiresAt: dateFromToday(-2) });
   const lotDValid = await createLot(productD, "D_VALID_LOT", "1.0000", { expiresAt: dateFromToday(10) });
   await assertRejects(
     () => registerInventoryLoss({ productId: productD.id, quantity: "2.0000", reason: `${PREFIX}vencimiento`, reference: `${PREFIX}D_EXPIRED` }, user.id),
