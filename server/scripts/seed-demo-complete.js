@@ -6,7 +6,7 @@ import { registerInventoryAdjustment } from "../src/services/inventory-adjustmen
 import { retainForReview, resolveInspection } from "../src/services/inventory-inspection.service.js";
 import { createProduction } from "../src/services/production.service.js";
 import { createPurchase, receivePurchase } from "../src/services/admin.service.js";
-
+import { updateOrderStatus } from "../src/services/order.service.js";
 const prisma = new PrismaClient();
 const PREFIX = "DEMO-";
 const PASSWORD = "DemoParkPlaza123*";
@@ -101,7 +101,7 @@ async function clearDemoData() {
   await deleteByChunks(prisma.purchaseItem, { OR: [{ productId: { in: demoProductIds } }, { purchase: { supplierId: { in: demoSupplierIds } } }] });
   await deleteByChunks(prisma.purchase, { OR: [{ supplierId: { in: demoSupplierIds } }, { createdById: { in: demoUserIds } }] });
   await deleteByChunks(prisma.inventoryLot, { OR: [{ id: { in: demoLotIds } }, { productId: { in: demoProductIds } }] });
-  await deleteByChunks(prisma.supplyRequestItem, { OR: [{ productId: { in: demoProductIds } }, { request: { area: { startsWith: PREFIX } } }] });
+  await deleteByChunks(prisma.supplyRequestItem, { request: { area: { startsWith: PREFIX } } });
   await deleteByChunks(prisma.supplyRequest, { area: { startsWith: PREFIX } });
   await deleteByChunks(prisma.product, { id: { in: demoProductIds } });
   await deleteByChunks(prisma.category, { name: { startsWith: PREFIX } });
@@ -476,42 +476,41 @@ async function createHotelBase() {
 
 async function createOrders({ products, stays, users }) {
   const activeStays = stays.filter((stay) => stay.status === "ACTIVA");
-  const recipeIngredients = {
-    "Lomo saltado": [["Carne de res", 0.25], ["Papa", 0.2], ["Cebolla", 0.08], ["Tomate", 0.08], ["Aceite", 0.03]],
-    "Arroz con pollo": [["Pollo", 0.25], ["Arroz", 0.18], ["Aceite", 0.02]],
-    "Desayuno continental": [["Huevos", 2], ["Leche", 0.25]],
-    "Limonada hotelera": [["Limon", 0.12], ["Azucar", 0.06], ["Agua mineral", 1], ["Hielo", 1]]
-  };
-  const orderSpecs = [
-    ["RESTAURANTE", "Lomo saltado", 65, "PENDIENTE"],
-    ["RESTAURANTE", "Arroz con pollo", 48, "EN_COCINA"],
-    ["RESTAURANTE", "Desayuno continental", 32, "PREPARANDO"],
-    ["RESTAURANTE", "Lomo saltado", 65, "LISTO"],
-    ["RESTAURANTE", "Arroz con pollo", 48, "ENTREGADO"],
-    ["BARTENDER", "Limonada hotelera", 18, "PENDIENTE"],
-    ["BARTENDER", "Limonada hotelera", 18, "PREPARANDO"],
-    ["BARTENDER", "Limonada hotelera", 18, "ENTREGADO"]
+  const baseOrderSpecs = [
+    ["RESTAURANTE", "Lomo saltado", 65],
+    ["RESTAURANTE", "Arroz con pollo", 48],
+    ["RESTAURANTE", "Desayuno continental", 32],
+    ["BARTENDER", "Limonada hotelera", 18]
   ];
+  const states = ["PENDIENTE", "EN_COCINA", "PREPARANDO", "LISTO", "ENTREGADO", "ENTREGADO", "ENTREGADO"];
+  
   const orders = [];
-  for (let i = 0; i < orderSpecs.length; i += 1) {
-    const [area, itemName, price, status] = orderSpecs[i];
-    const stay = activeStays[i % activeStays.length] || stays[0];
-    const order = await prisma.order.upsert({
+  for (let i = 0; i < 30; i += 1) {
+    const [area, itemName, price] = pick(baseOrderSpecs, i);
+    const targetStatus = pick(states, i);
+    const stay = pick(activeStays, i) || stays[0];
+    
+    // Distribucion de fechas (hoy, ayer, ultimos 7 dias)
+    const backdate = addDays(-i % 7, 12 + (i % 8));
+    const userId = area === "RESTAURANTE" ? users.RESTAURANTE.id : users.BARTENDER.id;
+
+    let order = await prisma.order.upsert({
       where: { code: `${PREFIX}${area === "RESTAURANTE" ? "RES" : "BAR"}-${String(i + 1).padStart(3, "0")}` },
-      update: { status },
+      update: { status: "PENDIENTE" },
       create: {
-        code: `${PREFIX}${area === "RESTAURANTE" ? "RES" : "BAR"}-${String(i + 1).padStart(3, "0")}`,
+        code: `${PREFIX}${area === "RESTAURANTE" ? "RES" : "BAR"}-${String(i + 1).padStart(3, "0")}` ,
         area,
         clientId: stay.clientId,
         roomId: stay.roomId,
         stayId: stay.id,
-        status,
+        status: "PENDIENTE",
         total: price,
         notes: `${PREFIX}Pedido demo`,
-        createdById: area === "RESTAURANTE" ? users.RESTAURANTE.id : users.BARTENDER.id,
-        createdAt: addDays(-i % 4, 12 + i)
+        createdById: userId,
+        createdAt: backdate
       }
     });
+
     await prisma.orderItem.deleteMany({ where: { orderId: order.id } });
     await prisma.orderItem.create({
       data: {
@@ -523,35 +522,58 @@ async function createOrders({ products, stays, users }) {
         quantity: 1
       }
     });
-    if (["LISTO", "ENTREGADO"].includes(status)) {
-      for (const [productName, quantity] of recipeIngredients[itemName] || []) {
-        await registerInventoryExit({
-          productId: products[productName].id,
-          quantity,
-          reason: `${PREFIX}Consumo por pedido ${order.code}`,
-          reference: `${PREFIX}PEDIDO-${order.code}`,
-          origin: "PEDIDO"
-        }, area === "RESTAURANTE" ? users.RESTAURANTE.id : users.BARTENDER.id);
-      }
+    
+    // We must manually trigger the state transitions sequentially
+    if (targetStatus !== "PENDIENTE") {
+      order = await updateOrderStatus(order.id, "PREPARANDO", userId);
     }
-    if (status === "ENTREGADO") {
-      await prisma.consumption.upsert({
-        where: { orderId: order.id },
-        update: { status: "PENDIENTE", amount: order.total },
-        create: {
-          clientId: order.clientId,
-          stayId: order.stayId,
-          orderId: order.id,
-          area,
-          concept: `${PREFIX}Pedido ${order.code}`,
-          amount: order.total,
-          status: "PENDIENTE"
+    if (["LISTO", "ENTREGADO"].includes(targetStatus)) {
+      order = await updateOrderStatus(order.id, "LISTO", userId);
+    }
+    if (targetStatus === "ENTREGADO") {
+      order = await updateOrderStatus(order.id, "ENTREGADO", userId);
+    }
+    
+    // Backdate everything created by order service so it looks nice in history
+    await prisma.order.update({ where: { id: order.id }, data: { createdAt: backdate, updatedAt: backdate } });
+    await prisma.inventoryMovement.updateMany({ where: { reference: { startsWith: `PEDIDO:${order.id}` } }, data: { createdAt: backdate } });
+    await prisma.consumption.updateMany({ where: { orderId: order.id }, data: { createdAt: backdate } });
+    
+    orders.push(order);
+  }
+  return orders;
+}
+
+async function createSupplyRequests({ products, users }) {
+  const reqs = [
+    { area: "RESTAURANTE", userId: users.RESTAURANTE.id, items: [["Carne de res", 5], ["Aceite", 3], ["Cebolla", 2]], status: "PENDIENTE" },
+    { area: "RESTAURANTE", userId: users.RESTAURANTE.id, items: [["Papa", 10], ["Tomate", 4]], status: "ENTREGADA" },
+    { area: "BARTENDER", userId: users.BARTENDER.id, items: [["Limon", 4], ["Azucar", 5]], status: "PENDIENTE" },
+    { area: "BARTENDER", userId: users.BARTENDER.id, items: [["Hielo", 12], ["Gaseosa", 24]], status: "ENTREGADA" }
+  ];
+  
+  for (let i = 0; i < reqs.length; i++) {
+    const r = reqs[i];
+    const sr = await prisma.supplyRequest.create({
+      data: {
+        area: `${PREFIX}${r.area}`,
+        status: r.status,
+        notes: `${PREFIX}Requisicion automatica`,
+        createdAt: addDays(-i, 8)
+      }
+    });
+    
+    for (const [pName, qty] of r.items) {
+      await prisma.supplyRequestItem.create({
+        data: {
+          requestId: sr.id,
+          productId: products[pName].id,
+          quantity: qty,
+          unit: products[pName].unit
         }
       });
     }
-    orders.push(await prisma.order.findUnique({ where: { id: order.id } }));
   }
-  return orders;
 }
 
 async function createOperationalData({ products, lotsByProduct, users, rooms }) {
@@ -628,7 +650,9 @@ async function createOperationalData({ products, lotsByProduct, users, rooms }) 
     ["DEMO-MNT-001", "LIMPIEZA", "DANO_INFRAESTRUCTURA", "Ventana con vidrio roto", "ALTA", "ABIERTO", rooms[0].id, tasks[0].id],
     ["DEMO-MNT-002", "LIMPIEZA", "MANTENIMIENTO", "Ducha con baja presion", "MEDIA", "EN_REVISION", rooms[1].id, tasks[1].id],
     ["DEMO-MNT-003", "RESTAURANTE", "DANO_EQUIPO", "Horno principal no enciende", "ALTA", "RESUELTO", null, null],
-    ["DEMO-OPS-001", "BARTENDER", "FALTA_INSUMO", "Hielo cerca del minimo", "MEDIA", "ABIERTO", null, null]
+    ["DEMO-OPS-001", "BARTENDER", "FALTA_INSUMO", "Hielo cerca del minimo", "MEDIA", "ABIERTO", null, null],
+    ["DEMO-OPS-002", "BARTENDER", "DANO_EQUIPO", "Licuadora principal huele a quemado", "ALTA", "EN_REVISION", null, null],
+    ["DEMO-OPS-003", "RESTAURANTE", "MANTENIMIENTO", "Refrigeradora emite ruido fuerte", "MEDIA", "ABIERTO", null, null]
   ];
   for (const [code, area, type, description, priority, status, roomId, cleaningTaskId] of reportRows) {
     const report = await prisma.operationalReport.create({
@@ -762,6 +786,7 @@ async function summary() {
     inspections: await prisma.inventoryInspection.count({ where: { product: { name: { startsWith: PREFIX } } } }),
     orders: await prisma.order.count({ where: { code: { startsWith: PREFIX } } }),
     reservations: await prisma.reservation.count({ where: { code: { startsWith: "DEMO-RSV-" } } }),
+    supplyRequests: await prisma.supplyRequest.count({ where: { area: { startsWith: PREFIX } } }),
     productions: await prisma.productionBatch.count({ where: { OR: [{ code: { startsWith: PREFIX } }, { inputProduct: { name: { startsWith: PREFIX } } }] } }),
     cleaningTasks: await prisma.cleaningTask.count({ where: { room: { number: { startsWith: "D" } } } }),
     maintenanceReports: await prisma.operationalReport.count({ where: { code: { startsWith: "DEMO-MNT-" } } })
@@ -780,6 +805,7 @@ async function main() {
   await createRecipes(products);
   const hotel = await createHotelBase();
   await createOrders({ products, stays: hotel.stays, users });
+  await createSupplyRequests({ products, users });
   await createOperationalData({ products, lotsByProduct, users, rooms: hotel.rooms });
   await createExtraBusinessData({ ...hotel, users });
   await validateInvariants();

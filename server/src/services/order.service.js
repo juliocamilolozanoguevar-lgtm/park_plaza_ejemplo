@@ -42,19 +42,19 @@ export async function updateOrderStatus(id, status, userId) {
   });
   if (!order) throw notFound("Pedido no encontrado.");
 
+  if (status === "PREPARANDO" && order.status !== "PREPARANDO") {
+    await reserveOrderStock(id, userId);
+  }
+
+  if (status === "LISTO" && order.status !== "LISTO") {
+    await consumeOrderReservation(id, order.code, userId);
+  }
+
+  if (status === "CANCELADO" && !["LISTO", "ENTREGADO"].includes(order.status)) {
+    await releaseOrderReservation(id);
+  }
+
   return prisma.$transaction(async (tx) => {
-    if (status === "PREPARANDO" && order.status !== "PREPARANDO") {
-      await reserveOrderStock(id, userId, tx);
-    }
-
-    if (status === "LISTO" && order.status !== "LISTO") {
-      await consumeOrderReservation(id, order.code, userId, tx);
-    }
-
-    if (status === "CANCELADO" && !["LISTO", "ENTREGADO"].includes(order.status)) {
-      await releaseOrderReservation(id, tx);
-    }
-
     const updated = await tx.order.update({
       where: { id },
       data: { status },
