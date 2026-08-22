@@ -13,7 +13,7 @@
     "db:push": "cd server && npx prisma db push",
     "db:migrate": "npm run prisma:migrate --workspace server",
     "db:seed": "npm run prisma:seed --workspace server",
-    "db:demo": "npm run db:seed",
+    "db:demo": "node server/scripts/seed-demo-complete.js",
     "db:reset-demo": "node server/scripts/reset-demo.js"
   },
   "devDependencies": {
