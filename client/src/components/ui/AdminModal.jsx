@@ -24,7 +24,7 @@ export function AdminModal({ open, onClose, title, children, hasUnsavedChanges =
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div 
-        className="absolute inset-0 bg-park-dark/40 backdrop-blur-sm transition-opacity" 
+        className="absolute inset-0 bg-slate-900/25 transition-opacity" 
         onClick={handleClose} 
       />
       <div className={`relative flex max-h-[90vh] w-full flex-col rounded-modal bg-white shadow-modal ${width}`}>

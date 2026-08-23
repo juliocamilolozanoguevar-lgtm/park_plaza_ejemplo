@@ -4,7 +4,7 @@ import { EmptyState } from "../../components/EmptyState";
 import { LoadingSpinner } from "../../components/LoadingSpinner";
 import { StatusBadge } from "../../components/StatusBadge";
 import { Toast } from "../../components/Toast";
-import { Button, Input, Select, Tabs } from "../../components/ui";
+import { Button, Input, Select, Tabs, AdminDrawer } from "../../components/ui";
 import { api } from "../../services/api";
 import { useFetch } from "../../hooks/useFetch";
 
@@ -381,51 +381,36 @@ function RecetasView({ recipes, products, recipeForm, setRecipeForm, updateItem,
 /* ─── DRAWER DETALLE DE RECETA ──────────────────────────────── */
 function RecipeDetailDrawer({ recipe, onClose }) {
   return (
-    <div className="fixed inset-0 z-40 bg-slate-950/30 p-4">
-      <aside className="ml-auto h-full max-w-md overflow-auto rounded-card bg-white p-5 shadow-drawer">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-xs font-black uppercase text-park-gold">Detalle de receta</p>
-            <h3 className="font-sans text-xl font-black text-park-black">{recipe.name}</h3>
-          </div>
-          <button
-            className="grid h-9 w-9 place-items-center rounded-button border border-park-border text-park-muted hover:text-park-black"
-            onClick={onClose}
-            type="button"
-          >
-            <X size={18} />
-          </button>
-        </div>
-        <div className="mt-3">
-          <StatusBadge value={recipe.active ? "ACTIVO" : "INACTIVO"} />
-        </div>
+    <AdminDrawer open={true} onClose={onClose} title="Detalle de receta" width="w-full max-w-md">
+      <div className="mt-3">
+        <StatusBadge value={recipe.active ? "ACTIVO" : "INACTIVO"} />
+      </div>
 
-        <section className="mt-5 rounded-card border border-park-border bg-park-bg p-4">
-          <h4 className="mb-4 text-xs font-black uppercase text-park-green">Ingredientes</h4>
-          {recipe.items?.length ? (
-            <table className="w-full text-sm">
-              <thead className="text-xs uppercase text-park-muted">
-                <tr>
-                  <th className="pb-2 text-left">Ingrediente</th>
-                  <th className="pb-2 text-right">Cantidad</th>
-                  <th className="pb-2 text-right">Unidad</th>
+      <section className="mt-5 rounded-card border border-park-border bg-park-bg p-4">
+        <h4 className="mb-4 text-xs font-black uppercase text-park-green">Ingredientes</h4>
+        {recipe.items?.length ? (
+          <table className="w-full text-sm">
+            <thead className="text-xs uppercase text-park-muted">
+              <tr>
+                <th className="pb-2 text-left">Ingrediente</th>
+                <th className="pb-2 text-right">Cantidad</th>
+                <th className="pb-2 text-right">Unidad</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-park-border">
+              {recipe.items.map((item, idx) => (
+                <tr key={idx}>
+                  <td className="py-2 font-semibold text-park-black">{item.product?.name || "—"}</td>
+                  <td className="py-2 text-right text-park-muted">{Number(item.quantity)}</td>
+                  <td className="py-2 text-right text-park-muted">{item.unit}</td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-park-border">
-                {recipe.items.map((item, idx) => (
-                  <tr key={idx}>
-                    <td className="py-2 font-semibold text-park-black">{item.product?.name || "—"}</td>
-                    <td className="py-2 text-right text-park-muted">{Number(item.quantity)}</td>
-                    <td className="py-2 text-right text-park-muted">{item.unit}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <p className="text-sm text-park-muted">Sin ingredientes registrados.</p>
-          )}
-        </section>
-      </aside>
-    </div>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p className="text-sm text-park-muted">Sin ingredientes registrados.</p>
+        )}
+      </section>
+    </AdminDrawer>
   );
 }

@@ -24,7 +24,7 @@ export function AdminDrawer({ open, onClose, title, children, hasUnsavedChanges 
   return (
     <>
       <div 
-        className="fixed inset-0 z-40 bg-park-dark/40 backdrop-blur-sm transition-opacity" 
+        className="fixed inset-0 z-40 bg-slate-900/20 transition-opacity" 
         onClick={handleClose} 
       />
       <aside 
