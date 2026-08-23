@@ -82,7 +82,7 @@ export async function updateOrderStatus(id, status, userId) {
         }
 
         return attachRecipePlan(updated, tx);
-      }, { isolationLevel: import('@prisma/client').Prisma.TransactionIsolationLevel.Serializable });
+      }, { isolationLevel: (await import('@prisma/client')).Prisma.TransactionIsolationLevel.Serializable });
     } catch (e) {
       if (e.code === "P2034" || (e.message && e.message.includes("40001"))) {
         attempts++;

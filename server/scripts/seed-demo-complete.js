@@ -476,30 +476,63 @@ async function createHotelBase() {
 
 async function createOrders({ products, stays, users }) {
   const activeStays = stays.filter((stay) => stay.status === "ACTIVA");
-  const baseOrderSpecs = [
-    ["RESTAURANTE", "Lomo saltado", 65],
-    ["RESTAURANTE", "Arroz con pollo", 48],
-    ["RESTAURANTE", "Desayuno continental", 32],
-    ["BARTENDER", "Limonada hotelera", 18]
+  const baseOrderSpecs = {
+    RESTAURANTE: [
+      ["Lomo saltado", 65],
+      ["Arroz con pollo", 48],
+      ["Desayuno continental", 32],
+    ],
+    BARTENDER: [
+      ["Limonada hotelera", 18]
+    ]
+  };
+
+  const restStates = ["PENDIENTE", "PENDIENTE", "PENDIENTE", "EN_COCINA", "EN_COCINA", "EN_COCINA", "PREPARANDO", "PREPARANDO", "PREPARANDO", "LISTO", "LISTO", "ENTREGADO", "ENTREGADO", "ENTREGADO", "ENTREGADO", "ENTREGADO"];
+  const barStates = ["PENDIENTE", "PENDIENTE", "PENDIENTE", "PENDIENTE", "PREPARANDO", "PREPARANDO", "PREPARANDO", "LISTO", "LISTO", "ENTREGADO", "ENTREGADO", "ENTREGADO", "ENTREGADO", "ENTREGADO"];
+
+  const ordersData = [
+    ...restStates.map(st => ({ area: "RESTAURANTE", status: st })),
+    ...barStates.map(st => ({ area: "BARTENDER", status: st }))
   ];
-  const states = ["PENDIENTE", "EN_COCINA", "PREPARANDO", "LISTO", "ENTREGADO", "ENTREGADO", "ENTREGADO"];
   
   const orders = [];
-  for (let i = 0; i < 30; i += 1) {
-    const [area, itemName, price] = pick(baseOrderSpecs, i);
-    const targetStatus = pick(states, i);
+  let restCount = 1;
+  let barCount = 1;
+  let restEntregadosToday = 0;
+  let barEntregadosToday = 0;
+
+  for (let i = 0; i < ordersData.length; i += 1) {
+    const data = ordersData[i];
+    const area = data.area;
+    const targetStatus = data.status;
+    const [itemName, price] = pick(baseOrderSpecs[area], i);
     const stay = pick(activeStays, i) || stays[0];
     
-    // Distribucion de fechas desacoplada del status para garantizar ENTREGADOs hoy
-    const daysOffset = -(i % 3); // Ensures overlap
-    const backdate = addDays(daysOffset, 12 + (i % 8));
+    let backdate;
+    if (targetStatus === "ENTREGADO") {
+      if (area === "RESTAURANTE" && restEntregadosToday < 2) {
+        backdate = new Date(today);
+        backdate.setHours(12 + restEntregadosToday, 0, 0, 0);
+        restEntregadosToday++;
+      } else if (area === "BARTENDER" && barEntregadosToday < 2) {
+        backdate = new Date(today);
+        backdate.setHours(14 + barEntregadosToday, 0, 0, 0);
+        barEntregadosToday++;
+      } else {
+        backdate = addDays(-1 - (i % 3), 12 + (i % 8));
+      }
+    } else {
+      backdate = addDays(-(i % 3), 12 + (i % 8));
+    }
+    
     const userId = area === "RESTAURANTE" ? users.RESTAURANTE.id : users.BARTENDER.id;
+    const codeNum = area === "RESTAURANTE" ? restCount++ : barCount++;
 
     let order = await prisma.order.upsert({
-      where: { code: `${PREFIX}${area === "RESTAURANTE" ? "RES" : "BAR"}-${String(i + 1).padStart(3, "0")}` },
+      where: { code: `${PREFIX}${area === "RESTAURANTE" ? "RES" : "BAR"}-${String(codeNum).padStart(3, "0")}` },
       update: { status: "PENDIENTE" },
       create: {
-        code: `${PREFIX}${area === "RESTAURANTE" ? "RES" : "BAR"}-${String(i + 1).padStart(3, "0")}` ,
+        code: `${PREFIX}${area === "RESTAURANTE" ? "RES" : "BAR"}-${String(codeNum).padStart(3, "0")}` ,
         area,
         clientId: stay.clientId,
         roomId: stay.roomId,
@@ -524,18 +557,21 @@ async function createOrders({ products, stays, users }) {
       }
     });
     
-    // We must manually trigger the state transitions sequentially
     if (targetStatus !== "PENDIENTE") {
-      order = await updateOrderStatus(order.id, "PREPARANDO", userId);
+      if (area === "RESTAURANTE" && targetStatus === "EN_COCINA") {
+        order = await updateOrderStatus(order.id, "EN_COCINA", userId);
+      } else {
+        if (area === "RESTAURANTE") order = await updateOrderStatus(order.id, "EN_COCINA", userId);
+        order = await updateOrderStatus(order.id, "PREPARANDO", userId);
+      }
     }
     if (["LISTO", "ENTREGADO"].includes(targetStatus)) {
-      order = await updateOrderStatus(order.id, "LISTO", userId);
+      if (order.status !== "LISTO") order = await updateOrderStatus(order.id, "LISTO", userId);
     }
     if (targetStatus === "ENTREGADO") {
       order = await updateOrderStatus(order.id, "ENTREGADO", userId);
     }
     
-    // Backdate everything created by order service so it looks nice in history
     await prisma.order.update({ where: { id: order.id }, data: { createdAt: backdate, updatedAt: backdate } });
     await prisma.inventoryMovement.updateMany({ where: { reference: { startsWith: `PEDIDO:${order.id}` } }, data: { createdAt: backdate } });
     await prisma.consumption.updateMany({ where: { orderId: order.id }, data: { createdAt: backdate } });
@@ -548,8 +584,10 @@ async function createOrders({ products, stays, users }) {
 async function createSupplyRequests({ products, users }) {
   const reqs = [
     { area: "RESTAURANTE", userId: users.RESTAURANTE.id, items: [["Carne de res", 5], ["Aceite", 3], ["Cebolla", 2]], status: "PENDIENTE" },
+    { area: "RESTAURANTE", userId: users.RESTAURANTE.id, items: [["Tomate", 2], ["Huevos", 12]], status: "PENDIENTE" },
     { area: "RESTAURANTE", userId: users.RESTAURANTE.id, items: [["Papa", 10], ["Tomate", 4]], status: "ENTREGADA" },
     { area: "BARTENDER", userId: users.BARTENDER.id, items: [["Limon", 4], ["Azucar", 5]], status: "PENDIENTE" },
+    { area: "BARTENDER", userId: users.BARTENDER.id, items: [["Frutas mixtas", 2], ["Agua mineral", 10]], status: "PENDIENTE" },
     { area: "BARTENDER", userId: users.BARTENDER.id, items: [["Hielo", 12], ["Gaseosa", 24]], status: "ENTREGADA" }
   ];
   
@@ -587,7 +625,9 @@ async function createOperationalData({ products, lotsByProduct, users, rooms }) 
   }, users.RESTAURANTE.id);
 
   await registerInventoryLoss({ productId: products.Tomate.id, quantity: 1.25, reason: `${PREFIX}Deterioro por maduracion`, reference: `${PREFIX}PERDIDA-TOMATE` }, users.RESTAURANTE.id);
+  await registerInventoryLoss({ productId: products.Aceite.id, quantity: 0.5, reason: `${PREFIX}Aceite derramado`, reference: `${PREFIX}PERDIDA-ACEITE` }, users.RESTAURANTE.id);
   await registerInventoryLoss({ productId: products.Hielo.id, quantity: 2, reason: `${PREFIX}Derretimiento operativo`, reference: `${PREFIX}PERDIDA-HIELO` }, users.BARTENDER.id);
+  await registerInventoryLoss({ productId: products.Limon.id, quantity: 1, reason: `${PREFIX}Limon deteriorado`, reference: `${PREFIX}PERDIDA-LIMON` }, users.BARTENDER.id);
   await registerInventoryLoss({ productId: products.Lejia.id, quantity: 1, reason: `${PREFIX}Derrame controlado`, reference: `${PREFIX}PERDIDA-LEJIA` }, users.LIMPIEZA.id);
   await registerInventoryLoss({ productId: products["Foco LED"].id, quantity: 1, reason: `${PREFIX}Rotura durante instalacion`, reference: `${PREFIX}PERDIDA-FOCO` }, users.MANTENIMIENTO.id);
 
@@ -651,9 +691,11 @@ async function createOperationalData({ products, lotsByProduct, users, rooms }) 
     ["DEMO-MNT-001", "LIMPIEZA", "DANO_INFRAESTRUCTURA", "Ventana con vidrio roto", "ALTA", "ABIERTO", rooms[0].id, tasks[0].id],
     ["DEMO-MNT-002", "LIMPIEZA", "MANTENIMIENTO", "Ducha con baja presion", "MEDIA", "EN_REVISION", rooms[1].id, tasks[1].id],
     ["DEMO-MNT-003", "RESTAURANTE", "DANO_EQUIPO", "Horno principal no enciende", "ALTA", "RESUELTO", null, null],
-    ["DEMO-OPS-001", "BARTENDER", "FALTA_INSUMO", "Hielo cerca del minimo", "MEDIA", "ABIERTO", null, null],
-    ["DEMO-OPS-002", "BARTENDER", "DANO_EQUIPO", "Licuadora principal huele a quemado", "ALTA", "EN_REVISION", null, null],
-    ["DEMO-OPS-003", "RESTAURANTE", "MANTENIMIENTO", "Refrigeradora emite ruido fuerte", "MEDIA", "ABIERTO", null, null]
+    ["DEMO-MNT-004", "RESTAURANTE", "MANTENIMIENTO", "Refrigeradora emite ruido fuerte", "MEDIA", "ABIERTO", null, null],
+    ["DEMO-OPS-001", "RESTAURANTE", "FALTA_INSUMO", "Falta de tomate", "ALTA", "ABIERTO", null, null],
+    ["DEMO-OPS-002", "BARTENDER", "FALTA_INSUMO", "Hielo cerca del minimo", "MEDIA", "ABIERTO", null, null],
+    ["DEMO-OPS-003", "BARTENDER", "DANO_EQUIPO", "Licuadora dañada", "ALTA", "EN_REVISION", null, null],
+    ["DEMO-MNT-005", "BARTENDER", "MANTENIMIENTO", "Refrigerador del bar no enfria", "ALTA", "RESUELTO", null, null]
   ];
   for (const [code, area, type, description, priority, status, roomId, cleaningTaskId] of reportRows) {
     const report = await prisma.operationalReport.create({
