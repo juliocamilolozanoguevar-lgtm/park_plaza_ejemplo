@@ -1,18 +1,19 @@
 import { Link } from "react-router-dom";
 import { Area, AreaChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { BedDouble, CalendarCheck, ClipboardCheck, DollarSign, LogIn, LogOut, RefreshCw, Users } from "lucide-react";
+import { BedDouble, CalendarCheck, ClipboardCheck, DollarSign, LogIn, LogOut, RefreshCw, Users, AlertTriangle, Clock } from "lucide-react";
 import { EmptyState } from "../../components/EmptyState";
 import { LoadingSpinner } from "../../components/LoadingSpinner";
 import { StatusBadge } from "../../components/StatusBadge";
 import { Button } from "../../components/ui";
+import { AdminMetricStrip, AdminTable, AdminTableHead, AdminTableRow, AdminTableHeaderCell, AdminTableCell } from "../../components/ui";
 import { useFetch } from "../../hooks/useFetch";
 
-const salesColors = ["#1E7D4B", "#F5A623", "#2F80ED", "#8B5CF6", "#14B8A6"];
+const salesColors = ["#1E6FD6", "#112244", "#7EC6FF", "#64748b", "#cbd5e1"];
 
 export function Dashboard() {
   const { data, loading, error, reload } = useFetch("/dashboard");
   if (loading) return <LoadingSpinner />;
-  if (error) return <p className="rounded-card bg-park-danger-soft p-4 font-semibold text-park-danger">{error.message}</p>;
+  if (error) return <p className="rounded-md bg-park-danger-soft p-4 font-semibold text-park-danger">{error.message}</p>;
 
   const dashboardData = data;
   const metrics = dashboardData.metrics || {};
@@ -27,176 +28,163 @@ export function Dashboard() {
   const lastUpdate = new Date().toLocaleString("es-PE");
   const alertItems = buildAlerts(dashboardData);
 
+  const topMetrics = [
+    { label: "Ocupación", value: `${occupancy}%`, subtext: `${occupiedRooms} ocupadas` },
+    { label: "Ingresos", value: money(metrics.incomeToday) },
+    { label: "Entradas Hoy", value: metrics.reservationsToday || 0 },
+    { label: "Salidas Hoy", value: metrics.checkOutsToday || 0 },
+  ];
+
   return (
-    <div className="space-y-5">
-      <section className="rounded-card border border-park-border bg-white p-5 shadow-card">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <h2 className="font-display text-2xl font-semibold text-park-dark">Bienvenido, Administrador</h2>
-            <p className="mt-1 text-sm text-park-muted">Resumen general de operaciones del hotel con informacion real del sistema.</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-3 text-sm text-park-muted">
-            <span>Ultima actualizacion: {lastUpdate}</span>
-            <Button icon={RefreshCw} variant="secondary" onClick={reload}>Actualizar</Button>
-          </div>
+    <div className="space-y-6 pb-10">
+      {/* HEADER COMPACTO */}
+      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-park-dark">Dashboard</h1>
+          <p className="text-sm text-park-muted">Resumen general de operaciones del hotel.</p>
         </div>
-
-        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-6">
-          <AdminMetric label="Ingresos del dia" value={money(metrics.incomeToday)} hint="Pagos registrados" icon={DollarSign} tone="green" />
-          <AdminMetric label="Ocupacion" value={`${occupancy}%`} hint={`${occupiedRooms} ocupadas`} icon={BedDouble} tone="blue" />
-          <AdminMetric label="Reservas hoy" value={metrics.reservationsToday || 0} hint="Entradas programadas" icon={CalendarCheck} tone="purple" />
-          <AdminMetric label="Check-ins hoy" value={metrics.checkInsToday || 0} hint="Llegadas registradas" icon={LogIn} tone="gold" />
-          <AdminMetric label="Check-outs hoy" value={metrics.checkOutsToday || 0} hint="Salidas registradas" icon={LogOut} tone="teal" />
-          <AdminMetric label="No show" value={metrics.noShow || 0} hint="Reservas sin llegada" icon={Users} tone="red" />
+        <div className="flex items-center gap-4 text-sm text-park-muted">
+          <span>Actualizado: {lastUpdate}</span>
+          <Button icon={RefreshCw} variant="secondary" onClick={reload}>Actualizar</Button>
         </div>
-      </section>
+      </div>
 
-      <section className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr_0.9fr]">
-        <Panel title="Ingresos" action={<span className="rounded-button border border-park-border px-3 py-2 text-xs font-black text-park-muted">Hoy</span>}>
-          <div className="h-72">
-            {income.length ? (
-              <ResponsiveContainer>
-                <AreaChart data={income}>
-                  <defs>
-                    <linearGradient id="incomeGradient" x1="0" x2="0" y1="0" y2="1">
-                      <stop offset="5%" stopColor="#1E7D4B" stopOpacity={0.35} />
-                      <stop offset="95%" stopColor="#1E7D4B" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid stroke="#E5E7EB" vertical={false} />
-                  <XAxis dataKey="time" tickLine={false} />
-                  <YAxis tickFormatter={(value) => `S/ ${value}`} tickLine={false} />
-                  <Tooltip formatter={(value) => money(value)} />
-                  <Area dataKey="amount" fill="url(#incomeGradient)" stroke="#1E7D4B" strokeWidth={3} />
-                </AreaChart>
-              </ResponsiveContainer>
-            ) : (
-              <EmptyState title="Sin ingresos registrados hoy" description="Los pagos del dia apareceran en este grafico." />
-            )}
-          </div>
-        </Panel>
+      <AdminMetricStrip metrics={topMetrics} />
 
-        <Panel title="Ventas por area">
-          {salesByArea.length ? (
-            <div className="grid gap-4 md:grid-cols-[150px_1fr] xl:grid-cols-1 2xl:grid-cols-[150px_1fr]">
-              <div className="h-40">
+      {/* SECCIÓN PRINCIPAL: GRÁFICOS Y ATENCIÓN */}
+      <div className="grid gap-6 xl:grid-cols-[1fr_350px]">
+        {/* GRÁFICOS */}
+        <div className="grid gap-6 md:grid-cols-2">
+          <Panel title="Ingresos de hoy">
+            <div className="h-56 mt-4">
+              {income.length ? (
                 <ResponsiveContainer>
+                  <AreaChart data={income}>
+                    <defs>
+                      <linearGradient id="incomeGradient" x1="0" x2="0" y1="0" y2="1">
+                        <stop offset="5%" stopColor="#1E6FD6" stopOpacity={0.35} />
+                        <stop offset="95%" stopColor="#1E6FD6" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid stroke="#E5E7EB" vertical={false} />
+                    <XAxis dataKey="time" tickLine={false} style={{ fontSize: '11px' }} />
+                    <YAxis tickFormatter={(value) => `S/ ${value}`} tickLine={false} style={{ fontSize: '11px' }} />
+                    <Tooltip formatter={(value) => money(value)} />
+                    <Area dataKey="amount" fill="url(#incomeGradient)" stroke="#1E6FD6" strokeWidth={3} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              ) : (
+                <EmptyState title="Sin ingresos" description="Los pagos del día aparecerán aquí." />
+              )}
+            </div>
+          </Panel>
+
+          <Panel title="Ventas por área">
+            {salesByArea.length ? (
+              <div className="mt-4 flex h-56 flex-col">
+                <ResponsiveContainer width="100%" height="60%">
                   <PieChart>
-                    <Pie data={salesByArea} dataKey="total" nameKey="area" innerRadius={45} outerRadius={70}>
+                    <Pie data={salesByArea} dataKey="total" nameKey="area" innerRadius={40} outerRadius={60}>
                       {salesByArea.map((_, index) => <Cell fill={salesColors[index % salesColors.length]} key={index} />)}
                     </Pie>
                     <Tooltip formatter={(value) => money(value)} />
                   </PieChart>
                 </ResponsiveContainer>
-              </div>
-              <div className="space-y-3">
-                {salesByArea.map((item, index) => (
-                  <div className="flex items-center justify-between gap-3 text-sm" key={item.area}>
-                    <span className="flex items-center gap-2 text-park-muted"><i className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: salesColors[index % salesColors.length] }} />{item.area}</span>
-                    <strong className="text-park-dark">{money(item.total)}</strong>
-                  </div>
-                ))}
-                <div className="border-t border-park-border pt-3">
-                  <div className="flex justify-between text-sm font-black text-park-dark"><span>Total</span><span>{money(metrics.incomeToday)}</span></div>
+                <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                  {salesByArea.map((item, index) => (
+                    <div className="flex items-center gap-2" key={item.area}>
+                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: salesColors[index % salesColors.length] }} />
+                      <span className="truncate font-medium text-park-dark">{item.area}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
-            </div>
-          ) : (
-            <EmptyState title="Sin ventas por area" description="Cuando existan pagos se agruparan aqui." />
-          )}
-        </Panel>
+            ) : (
+              <div className="mt-4 h-56">
+                <EmptyState title="Sin ventas" description="Se mostrarán aquí." />
+              </div>
+            )}
+          </Panel>
+        </div>
 
-        <Panel title="Ocupacion general">
-          <div className="space-y-4">
-            <ProgressRow label="Habitaciones ocupadas" value={occupiedRooms} total={knownRooms} />
-            <ProgressRow label="Habitaciones libres" value={availableRooms} total={knownRooms} />
-            <ProgressRow label="Huespedes hospedados" value={metrics.hostedGuests || 0} total={Math.max(metrics.hostedGuests || 0, knownRooms)} />
-            <div className="border-t border-park-border pt-3">
-              <div className="flex justify-between text-sm font-black text-park-dark"><span>Total ocupacion</span><span>{occupancy}%</span></div>
-            </div>
-          </div>
-        </Panel>
-      </section>
-
-      <section className="grid gap-5 xl:grid-cols-[1.1fr_0.8fr_0.9fr]">
-        <Panel title="Atencion requerida" titleClassName="text-park-danger">
+        {/* ATENCIÓN REQUERIDA */}
+        <Panel title="Atención requerida" titleClassName="text-park-danger flex items-center gap-2"><AlertTriangle size={18}/>
           {alertItems.length ? (
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-left text-sm">
-                <thead className="text-xs uppercase text-park-muted">
-                  <tr><th className="py-3">Area</th><th>Problema</th><th>Prioridad</th><th>Accion</th></tr>
-                </thead>
-                <tbody className="divide-y divide-park-border">
-                  {alertItems.map((item) => (
-                    <tr key={item.key}>
-                      <td className="py-3 font-semibold text-park-dark">{item.area}</td>
-                      <td className="py-3 text-park-muted">{item.problem}</td>
-                      <td className="py-3"><StatusBadge value={item.priority} /></td>
-                      <td className="py-3"><Link className="rounded-button border border-park-border px-3 py-1.5 text-xs font-black text-park-green" to={item.href}>Ver</Link></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="mt-4 divide-y divide-park-border">
+              {alertItems.map((item) => (
+                <div key={item.key} className="py-3 flex justify-between items-center gap-4">
+                  <div>
+                    <p className="text-sm font-semibold text-park-dark">{item.area}</p>
+                    <p className="text-xs text-park-muted">{item.problem}</p>
+                  </div>
+                  <Link to={item.href} className="text-xs font-semibold text-park-accent hover:underline">Ir</Link>
+                </div>
+              ))}
             </div>
           ) : (
-            <EmptyState title="Sin atenciones criticas" description="No hay incidencias, pedidos o stock bajo pendiente." />
-          )}
-        </Panel>
-
-        <Panel title="Resumen operativo">
-          <div className="space-y-3">
-            <SummaryItem icon={Users} label="Huespedes hospedados" value={metrics.hostedGuests || 0} helper="Actualmente" />
-            <SummaryItem icon={BedDouble} label="Habitaciones ocupadas" value={occupiedRooms} helper={`${availableRooms} libres`} />
-            <SummaryItem icon={ClipboardCheck} label="Pendientes de limpieza" value={cleaning.length} helper="Habitaciones" />
-            <SummaryItem icon={CalendarCheck} label="Eventos proximos" value={dashboardData.upcomingEvents?.length || 0} helper="Programados" />
-          </div>
-        </Panel>
-
-        <Panel title="Proximos eventos" action={<Link className="text-xs font-black text-park-danger" to="/eventos/calendario">Ver todos</Link>}>
-          {dashboardData.upcomingEvents?.length ? (
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-left text-sm">
-                <thead className="text-xs uppercase text-park-muted">
-                  <tr><th className="py-3">Hora</th><th>Cliente</th><th>Espacio</th><th>Estado</th></tr>
-                </thead>
-                <tbody className="divide-y divide-park-border">
-                  {dashboardData.upcomingEvents.map((event) => (
-                    <tr key={event.id}>
-                      <td className="py-3 font-semibold">{time(event.startsAt)}</td>
-                      <td className="py-3">{clientName(event.client)}</td>
-                      <td className="py-3">{event.space?.name || "-"}</td>
-                      <td className="py-3"><StatusBadge value={event.status} /></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="mt-4">
+              <EmptyState title="Todo al día" description="No hay atenciones críticas." />
             </div>
-          ) : (
-            <EmptyState title="Sin eventos proximos" description="Los eventos programados apareceran aqui." />
           )}
         </Panel>
-      </section>
+      </div>
 
-      <section className="grid gap-5 xl:grid-cols-2">
-        <Panel title="Pedidos operativos">
+      {/* SECCIÓN SECUNDARIA: TABLAS */}
+      <div className="grid gap-6 xl:grid-cols-2">
+        <Panel title="Pedidos Operativos">
           {orders.length ? (
-            <ul className="divide-y divide-park-border">
-              {orders.map((order) => <li className="flex items-center justify-between gap-3 py-3 text-sm" key={order.id}><span className="font-semibold text-park-dark">{order.code} - {order.area}</span><StatusBadge value={order.status} /></li>)}
-            </ul>
+            <div className="mt-4">
+              <AdminTable>
+                <AdminTableHead>
+                  <AdminTableHeaderCell>Pedido</AdminTableHeaderCell>
+                  <AdminTableHeaderCell>Área</AdminTableHeaderCell>
+                  <AdminTableHeaderCell>Estado</AdminTableHeaderCell>
+                </AdminTableHead>
+                <tbody>
+                  {orders.map((order) => (
+                    <AdminTableRow key={order.id}>
+                      <AdminTableCell className="font-semibold text-park-dark">{order.code}</AdminTableCell>
+                      <AdminTableCell>{order.area}</AdminTableCell>
+                      <AdminTableCell><StatusBadge value={order.status} /></AdminTableCell>
+                    </AdminTableRow>
+                  ))}
+                </tbody>
+              </AdminTable>
+            </div>
           ) : (
-            <EmptyState title="Sin pedidos pendientes" description="No hay pedidos activos en restaurante o bartender." />
+            <div className="mt-4">
+              <EmptyState title="Sin pedidos" description="No hay pedidos activos." />
+            </div>
           )}
         </Panel>
-        <Panel title="Actividad reciente">
-          {dashboardData.recentActivity?.length ? (
-            <ul className="divide-y divide-park-border">
-              {dashboardData.recentActivity.map((item) => <li className="py-3 text-sm" key={item.id}><strong className="text-park-dark">{item.module}</strong><span className="block text-park-muted">{item.action} - {item.detail || "Sin detalle"}</span></li>)}
-            </ul>
+
+        <Panel title="Próximos Eventos">
+          {dashboardData.upcomingEvents?.length ? (
+            <div className="mt-4">
+              <AdminTable>
+                <AdminTableHead>
+                  <AdminTableHeaderCell>Hora</AdminTableHeaderCell>
+                  <AdminTableHeaderCell>Cliente</AdminTableHeaderCell>
+                  <AdminTableHeaderCell>Estado</AdminTableHeaderCell>
+                </AdminTableHead>
+                <tbody>
+                  {dashboardData.upcomingEvents.map((event) => (
+                    <AdminTableRow key={event.id}>
+                      <AdminTableCell className="font-semibold text-park-dark">{time(event.startsAt)}</AdminTableCell>
+                      <AdminTableCell>{clientName(event.client)}</AdminTableCell>
+                      <AdminTableCell><StatusBadge value={event.status} /></AdminTableCell>
+                    </AdminTableRow>
+                  ))}
+                </tbody>
+              </AdminTable>
+            </div>
           ) : (
-            <EmptyState title="Sin actividad reciente" description="La auditoria reciente aparecera aqui." />
+            <div className="mt-4">
+              <EmptyState title="Sin eventos" description="No hay próximos eventos programados." />
+            </div>
           )}
         </Panel>
-      </section>
+      </div>
     </div>
   );
 }
@@ -205,13 +193,13 @@ function buildAlerts(data) {
   const lowStock = (data.lowStock || []).map((product) => ({
     key: `stock-${product.id}`,
     area: product.area || "Inventario",
-    problem: `${product.name} con stock ${Number(product.stock)}`,
+    problem: `${product.name} (Stock: ${Number(product.stock)})`,
     priority: Number(product.stock) <= 0 ? "CRITICA" : "ALTA",
     href: "/inventario"
   }));
   const cleaning = (data.modules?.cleaning || []).map((task) => ({
     key: `cleaning-${task.id}`,
-    area: `Habitacion ${task.room?.number || "-"}`,
+    area: `Hab. ${task.room?.number || "-"}`,
     problem: `Limpieza ${String(task.status).replaceAll("_", " ").toLowerCase()}`,
     priority: task.priority || "MEDIA",
     href: "/limpieza/pendientes"
@@ -219,80 +207,29 @@ function buildAlerts(data) {
   const orders = (data.modules?.orders || []).map((order) => ({
     key: `order-${order.id}`,
     area: order.area,
-    problem: `Pedido ${order.code} ${String(order.status).replaceAll("_", " ").toLowerCase()}`,
+    problem: `${order.code} ${String(order.status).replaceAll("_", " ").toLowerCase()}`,
     priority: order.status === "PENDIENTE" ? "MEDIA" : "BAJA",
     href: order.area === "BARTENDER" ? "/bartender/pendientes" : "/restaurante/pedidos"
   }));
   const incidents = data.metrics?.incidentsOpen ? [{
     key: "incidents-open",
     area: "Incidencias",
-    problem: `${data.metrics.incidentsOpen} reportes abiertos`,
+    problem: `${data.metrics.incidentsOpen} abiertos`,
     priority: data.metrics.incidentsHighPriority ? "CRITICA" : "ALTA",
     href: "/reportes"
   }] : [];
-  return [...incidents, ...lowStock, ...cleaning, ...orders].slice(0, 6);
-}
-
-function AdminMetric({ label, value, hint, icon: Icon, tone }) {
-  const tones = {
-    green: "bg-park-green-soft text-park-green",
-    gold: "bg-park-gold-soft text-park-black",
-    red: "bg-park-danger-soft text-park-danger",
-    blue: "bg-sky-50 text-sky-700",
-    purple: "bg-violet-50 text-violet-700",
-    teal: "bg-teal-50 text-teal-700"
-  };
-  return (
-    <article className="rounded-card border border-park-border bg-white p-4 shadow-card">
-      <div className={`mb-3 grid h-11 w-11 place-items-center rounded-full ${tones[tone] || tones.green}`}>
-        <Icon size={20} />
-      </div>
-      <p className="text-xs font-semibold text-park-muted">{label}</p>
-      <strong className="mt-2 block font-display text-2xl font-semibold text-park-dark">{value}</strong>
-      <span className="mt-2 block text-xs font-semibold text-park-muted">{hint}</span>
-    </article>
-  );
+  return [...incidents, ...lowStock, ...cleaning, ...orders].slice(0, 5);
 }
 
 function Panel({ title, children, action, titleClassName = "text-park-dark" }) {
   return (
-    <article className="rounded-card border border-park-border bg-white p-5 shadow-card">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <h2 className={`font-sans text-lg font-black ${titleClassName}`}>{title}</h2>
+    <article className="rounded-lg border border-park-border bg-white p-5 shadow-sm">
+      <div className="flex items-center justify-between">
+        <h2 className={`text-base font-semibold ${titleClassName}`}>{title}</h2>
         {action}
       </div>
       {children}
     </article>
-  );
-}
-
-function ProgressRow({ label, value, total }) {
-  const percent = total ? Math.round((Number(value || 0) / Number(total)) * 100) : 0;
-  return (
-    <div>
-      <div className="mb-2 flex justify-between gap-3 text-sm">
-        <span className="font-semibold text-park-dark">{label}</span>
-        <span className="text-park-muted">{value} / {total || 0} - {percent}%</span>
-      </div>
-      <div className="h-2 rounded-full bg-park-bg">
-        <div className="h-2 rounded-full bg-park-green" style={{ width: `${Math.min(percent, 100)}%` }} />
-      </div>
-    </div>
-  );
-}
-
-function SummaryItem({ icon: Icon, label, value, helper }) {
-  return (
-    <div className="flex items-center justify-between gap-4 rounded-card border border-park-border bg-park-bg p-4">
-      <div className="flex items-center gap-3">
-        <span className="grid h-10 w-10 place-items-center rounded-full bg-park-green-soft text-park-green"><Icon size={18} /></span>
-        <span className="text-sm font-semibold text-park-dark">{label}</span>
-      </div>
-      <div className="text-right">
-        <strong className="block font-display text-xl font-semibold text-park-dark">{value}</strong>
-        <span className="text-xs text-park-muted">{helper}</span>
-      </div>
-    </div>
   );
 }
 

@@ -4,10 +4,9 @@ import { BedDouble, CalendarCheck, Car, ChefHat, ClipboardCheck, CreditCard, Log
 import { EmptyState } from "../../components/EmptyState";
 import { LoadingSpinner } from "../../components/LoadingSpinner";
 import { StatusBadge } from "../../components/StatusBadge";
-import { Table } from "../../components/Table";
 import { useFetch } from "../../hooks/useFetch";
 import { api } from "../../services/api";
-import { Button, Input, PageHeader, Select, Tabs } from "../../components/ui";
+import { Button, Input, PageHeader, Select, Tabs, AdminTable, AdminTableHead, AdminTableRow, AdminTableHeaderCell, AdminTableCell } from "../../components/ui";
 import { useAuth } from "../../context/AuthContext";
 
 function formatDate(value) {
@@ -536,17 +535,18 @@ export function AdminResourcePage({ type }) {
               </div>
               
               {visibleRows.length ? (
-                <div className="overflow-x-auto">
-                  <Table
-                    columns={config.columns}
-                    rows={visibleRows}
-                    renderRow={(item) => (
-                      <tr key={item.id} className="border-b border-park-border/50 hover:bg-park-bg/50 text-sm">
-                        {config.row(item).map((cell, index) => <td className="px-4 py-3 text-park-muted" key={index}>{cell}</td>)}
-                      </tr>
-                    )}
-                  />
-                </div>
+                <AdminTable>
+                  <AdminTableHead>
+                    {config.columns.map((col, idx) => <AdminTableHeaderCell key={idx}>{col}</AdminTableHeaderCell>)}
+                  </AdminTableHead>
+                  <tbody>
+                    {visibleRows.map((item) => (
+                      <AdminTableRow key={item.id}>
+                        {config.row(item).map((cell, index) => <AdminTableCell key={index}>{cell}</AdminTableCell>)}
+                      </AdminTableRow>
+                    ))}
+                  </tbody>
+                </AdminTable>
               ) : (
                 <EmptyState title="Sin movimientos de pago" description="No hay pagos que coincidan con los filtros actuales." />
               )}
@@ -565,36 +565,41 @@ export function AdminResourcePage({ type }) {
         canCreate ? <ResourceForm type={type} onSubmit={handleSubmit} saving={saving} context={context} prefill={formPrefill} /> : null
       ) : null}
       {type !== "configuracion" && type !== "pagos" && visibleRows.length ? (
-        <Table
-          columns={["consumos", "cochera", "compras"].includes(type) ? [...config.columns, "Acciones"] : config.columns}
-          rows={visibleRows}
-          renderRow={(item) => (
-            <tr key={item.id}>
-              {config.row(item).map((cell, index) => <td className="px-4 py-3" key={index}>{cell}</td>)}
-              {type === "cochera" ? (
-                <td className="px-4 py-3">
-                  {canEdit && item.entries?.[0] ? <Button disabled={saving} onClick={() => handleAction("vehicleExit", item)} size="sm" variant="secondary">Registrar salida</Button> : "-"}
-                </td>
-              ) : null}
-              {type === "consumos" ? (
-                <td className="px-4 py-3">
-                  {canEdit && nextOrderStatus(item) ? (
-                    <Button disabled={saving} onClick={() => handleAction("orderStatus", item)} size="sm" variant={nextOrderStatus(item) === "ENTREGADO" ? "gold" : "secondary"}>
-                      Pasar a {nextOrderStatus(item).replaceAll("_", " ")}
-                    </Button>
-                  ) : (
-                    <StatusBadge value={item.status} />
-                  )}
-                </td>
-              ) : null}
-              {type === "compras" ? (
-                <td className="px-4 py-3">
-                  {canEdit && item.status !== "RECIBIDA" ? <Button disabled={saving} onClick={() => handleAction("receivePurchase", item)} size="sm" variant="gold">Recibir</Button> : <StatusBadge value={item.status === "RECIBIDA" ? "RECIBIDA" : item.status} />}
-                </td>
-              ) : null}
-            </tr>
-          )}
-        />
+        <AdminTable>
+          <AdminTableHead>
+            {(["consumos", "cochera", "compras"].includes(type) ? [...config.columns, "Acciones"] : config.columns).map((col, idx) => (
+              <AdminTableHeaderCell key={idx}>{col}</AdminTableHeaderCell>
+            ))}
+          </AdminTableHead>
+          <tbody>
+            {visibleRows.map((item) => (
+              <AdminTableRow key={item.id}>
+                {config.row(item).map((cell, index) => <AdminTableCell key={index}>{cell}</AdminTableCell>)}
+                {type === "cochera" ? (
+                  <AdminTableCell>
+                    {canEdit && item.entries?.[0] ? <Button disabled={saving} onClick={() => handleAction("vehicleExit", item)} size="sm" variant="secondary">Registrar salida</Button> : "-"}
+                  </AdminTableCell>
+                ) : null}
+                {type === "consumos" ? (
+                  <AdminTableCell>
+                    {canEdit && nextOrderStatus(item) ? (
+                      <Button disabled={saving} onClick={() => handleAction("orderStatus", item)} size="sm" variant={nextOrderStatus(item) === "ENTREGADO" ? "gold" : "secondary"}>
+                        Pasar a {nextOrderStatus(item).replaceAll("_", " ")}
+                      </Button>
+                    ) : (
+                      <StatusBadge value={item.status} />
+                    )}
+                  </AdminTableCell>
+                ) : null}
+                {type === "compras" ? (
+                  <AdminTableCell>
+                    {canEdit && item.status !== "RECIBIDA" ? <Button disabled={saving} onClick={() => handleAction("receivePurchase", item)} size="sm" variant="gold">Recibir</Button> : <StatusBadge value={item.status === "RECIBIDA" ? "RECIBIDA" : item.status} />}
+                  </AdminTableCell>
+                ) : null}
+              </AdminTableRow>
+            ))}
+          </tbody>
+        </AdminTable>
       ) : type !== "configuracion" && type !== "pagos" ? (
         <EmptyState title={`Sin registros en ${config.title}`} description={rows.length ? "No hay resultados con los filtros actuales." : "Cuando existan datos en PostgreSQL apareceran en esta vista."} />
       ) : null}
@@ -847,35 +852,31 @@ function ReceivablesPanel({ items }) {
           </div>
         </div>
         {filteredItems.length ? (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[600px] border-collapse text-left text-sm">
-              <thead>
-                <tr className="border-b border-park-border text-park-muted">
-                  <th className="px-4 py-3 font-semibold">TIPO</th>
-                  <th className="px-4 py-3 font-semibold">CLIENTE</th>
-                  <th className="px-4 py-3 font-semibold">REFERENCIA</th>
-                  <th className="px-4 py-3 font-semibold">CONCEPTO</th>
-                  <th className="px-4 py-3 font-semibold text-right">SALDO</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredItems.map((item) => (
-                  <tr className="border-b border-park-border/50 hover:bg-park-bg/50" key={item.key}>
-                    <td className="px-4 py-3">
-                      <span className="rounded-button bg-park-green-soft px-2 py-1 text-[10px] font-black uppercase tracking-wide text-park-green">{item.origin}</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <p className="font-semibold text-park-dark">{item.client}</p>
-                      <p className="text-xs text-park-muted">Doc. {item.document}</p>
-                    </td>
-                    <td className="px-4 py-3 text-park-muted">{item.operation}</td>
-                    <td className="px-4 py-3 text-park-muted">{item.payload?.concept || "-"}</td>
-                    <td className="px-4 py-3 text-right font-display font-semibold text-park-dark">{money(item.balance)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <AdminTable>
+            <AdminTableHead>
+              <AdminTableHeaderCell>TIPO</AdminTableHeaderCell>
+              <AdminTableHeaderCell>CLIENTE</AdminTableHeaderCell>
+              <AdminTableHeaderCell>REFERENCIA</AdminTableHeaderCell>
+              <AdminTableHeaderCell>CONCEPTO</AdminTableHeaderCell>
+              <AdminTableHeaderCell className="text-right">SALDO</AdminTableHeaderCell>
+            </AdminTableHead>
+            <tbody>
+              {filteredItems.map((item) => (
+                <AdminTableRow key={item.key}>
+                  <AdminTableCell>
+                    <span className="rounded-button bg-park-green-soft px-2 py-1 text-[10px] font-black uppercase tracking-wide text-park-green">{item.origin}</span>
+                  </AdminTableCell>
+                  <AdminTableCell>
+                    <p className="font-semibold text-park-dark">{item.client}</p>
+                    <p className="text-xs text-park-muted">Doc. {item.document}</p>
+                  </AdminTableCell>
+                  <AdminTableCell>{item.operation}</AdminTableCell>
+                  <AdminTableCell>{item.payload?.concept || "-"}</AdminTableCell>
+                  <AdminTableCell className="text-right font-display font-semibold text-park-dark">{money(item.balance)}</AdminTableCell>
+                </AdminTableRow>
+              ))}
+            </tbody>
+          </AdminTable>
         ) : (
           <EmptyState title="Sin saldos pendientes" description="No hay reservas, estadias o eventos con saldo por cobrar en este filtro." />
         )}

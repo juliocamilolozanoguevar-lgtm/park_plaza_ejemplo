@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import { EmptyState } from "../../components/EmptyState";
 import { LoadingSpinner } from "../../components/LoadingSpinner";
 import { StatusBadge } from "../../components/StatusBadge";
-import { Button, PageHeader } from "../../components/ui";
+import { Button, PageHeader, AdminTable, AdminTableHead, AdminTableRow, AdminTableHeaderCell, AdminTableCell, AdminMetricStrip, AdminDrawer } from "../../components/ui";
 import { useFetch } from "../../hooks/useFetch";
 import { ModuleNav } from "../../components/ui/ModuleNav";
 import { ImagePreview } from "../../components/ImagePreview";
@@ -57,12 +57,12 @@ function CleaningSummary({ tasks, reports, onSelect }) {
 
   return (
     <>
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <Metric icon={Clock} label="Pendientes" tone="gold" value={pending.length} />
-        <Metric icon={BedDouble} label="En revision" tone="blue" value={inProgress.length} />
-        <Metric icon={CheckCircle2} label="Finalizadas hoy" tone="green" value={finishedToday.length} />
-        <Metric icon={AlertTriangle} label="Incidencias" tone="red" value={reports.length} />
-      </section>
+      <AdminMetricStrip metrics={[
+        { label: "Pendientes", value: pending.length },
+        { label: "En revision", value: inProgress.length },
+        { label: "Finalizadas hoy", value: finishedToday.length },
+        { label: "Incidencias", value: reports.length }
+      ]} />
 
       <section className="grid gap-5 xl:grid-cols-[1fr_1fr_1.1fr]">
         <Panel title="Estado por prioridad">
@@ -127,130 +127,129 @@ function FloorCleaningView({ tasks, onSelect }) { const [floor, setFloor] = useS
 function TaskGrid({ tasks, onSelect }) {
   if (!tasks.length) return <EmptyState title="Sin tareas" description="No hay habitaciones para esta vista." />;
   return (
-    <section className="grid gap-4 xl:grid-cols-2">
-      {tasks.map((task) => (
-        <article className="rounded-card border border-park-border bg-white p-5 shadow-card" key={task.id}>
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h3 className="text-lg font-black text-park-black">Habitacion {task.room?.number}</h3>
-              <p className="text-sm font-semibold text-park-muted">{task.room?.type?.name || "Tipo no registrado"}</p>
-            </div>
-            <StatusBadge value={task.status} />
-          </div>
-          <div className="mt-4 grid gap-3 md:grid-cols-2">
-            <InfoTile label="Empleado" value={task.assignedTo || "Sin asignar"} />
-            <InfoTile label="Prioridad" value={<StatusBadge value={task.priority} />} />
-            <InfoTile label="Solicitado" value={formatDateTime(task.checkoutAt || task.createdAt)} />
-            <InfoTile label="Incidencias" value={task.operationalReports?.length || 0} />
-          </div>
-          <div className="mt-4 flex items-center justify-between gap-3">
-            <EvidenceMini task={task} />
-            <Button icon={Eye} onClick={() => onSelect(task)} size="sm" type="button" variant="secondary">Ver detalle</Button>
-          </div>
-        </article>
-      ))}
-    </section>
+    <AdminTable>
+      <AdminTableHead>
+        <AdminTableHeaderCell>Habitacion</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Tipo</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Empleado</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Prioridad</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Estado</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Incidencias</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Accion</AdminTableHeaderCell>
+      </AdminTableHead>
+      <tbody>
+        {tasks.map((task) => (
+          <AdminTableRow key={task.id} onClick={() => onSelect(task)}>
+            <AdminTableCell className="font-black text-park-black">Habitacion {task.room?.number}</AdminTableCell>
+            <AdminTableCell>{task.room?.type?.name || "Tipo no registrado"}</AdminTableCell>
+            <AdminTableCell>{task.assignedTo || "Sin asignar"}</AdminTableCell>
+            <AdminTableCell><StatusBadge value={task.priority} /></AdminTableCell>
+            <AdminTableCell><StatusBadge value={task.status} /></AdminTableCell>
+            <AdminTableCell>{task.operationalReports?.length || 0}</AdminTableCell>
+            <AdminTableCell><Button icon={Eye} onClick={(event) => { event.stopPropagation(); onSelect(task); }} size="sm" type="button" variant="secondary">Detalle</Button></AdminTableCell>
+          </AdminTableRow>
+        ))}
+      </tbody>
+    </AdminTable>
   );
 }
 
 function EvidenceList({ tasks, onSelect }) {
   if (!tasks.length) return <EmptyState title="Sin evidencias" description="Las evidencias registradas apareceran aqui." />;
   return (
-    <section className="rounded-card border border-park-border bg-white p-5 shadow-card">
-      <div className="overflow-x-auto">
-        <table className="min-w-full text-left text-sm">
-          <thead className="text-xs uppercase text-park-muted"><tr><th className="py-3">Habitacion</th><th>Empleado</th><th>Entrada</th><th>Salida</th><th>Incidencias</th><th>Fecha</th><th>Accion</th></tr></thead>
-          <tbody className="divide-y divide-park-border">
-            {tasks.map((task) => {
-              const groups = splitEvidence(task.evidences);
-              return (
-                <tr key={task.id}>
-                  <td className="py-3 font-black text-park-black">Habitacion {task.room?.number}</td>
-                  <td>{task.assignedTo || "Sin asignar"}</td>
-                  <td><Thumb evidence={groups.entry[0]} /></td>
-                  <td><Thumb evidence={groups.exit[0]} /></td>
-                  <td>{task.operationalReports?.length ? `${task.operationalReports.length} novedad(es)` : "Sin novedades"}</td>
-                  <td>{formatDateTime(task.evidences?.[0]?.createdAt || task.updatedAt)}</td>
-                  <td><Button icon={Eye} onClick={() => onSelect(task)} size="sm" type="button" variant="secondary" /></td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </section>
+    <AdminTable>
+      <AdminTableHead>
+        <AdminTableHeaderCell>Habitacion</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Empleado</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Entrada</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Salida</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Incidencias</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Fecha</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Accion</AdminTableHeaderCell>
+      </AdminTableHead>
+      <tbody>
+        {tasks.map((task) => {
+          const groups = splitEvidence(task.evidences);
+          return (
+            <AdminTableRow key={task.id} onClick={() => onSelect(task)}>
+              <AdminTableCell className="font-black text-park-black">Habitacion {task.room?.number}</AdminTableCell>
+              <AdminTableCell>{task.assignedTo || "Sin asignar"}</AdminTableCell>
+              <AdminTableCell><Thumb evidence={groups.entry[0]} /></AdminTableCell>
+              <AdminTableCell><Thumb evidence={groups.exit[0]} /></AdminTableCell>
+              <AdminTableCell>{task.operationalReports?.length ? `${task.operationalReports.length} novedad(es)` : "Sin novedades"}</AdminTableCell>
+              <AdminTableCell>{formatDateTime(task.evidences?.[0]?.createdAt || task.updatedAt)}</AdminTableCell>
+              <AdminTableCell><Button icon={Eye} onClick={(event) => { event.stopPropagation(); onSelect(task); }} size="sm" type="button" variant="secondary" /></AdminTableCell>
+            </AdminTableRow>
+          );
+        })}
+      </tbody>
+    </AdminTable>
   );
 }
 
 function IncidentList({ reports, onSelect }) {
   if (!reports.length) return <EmptyState title="Sin incidencias" description="No hay danos reportados desde limpieza." />;
   return (
-    <section className="grid gap-3">
-      {reports.map((report) => (
-        <article className="rounded-card border border-park-border bg-white p-4 shadow-card" key={report.id}>
-          <div className="grid gap-3 lg:grid-cols-[1fr_1.4fr_auto] lg:items-center">
-            <div>
-              <p className="font-black text-park-black">Habitacion {report.room?.number || report.task?.room?.number || "-"}</p>
-              <p className="text-sm font-semibold text-park-muted">{report.type?.replaceAll("_", " ")}</p>
-            </div>
-            <div>
-              <p className="font-semibold text-park-black">{report.description}</p>
-              <p className="text-xs text-park-muted">Reportado por {report.reportedBy ? `${report.reportedBy.firstName} ${report.reportedBy.lastName}` : report.task?.assignedTo || "Sin asignar"} / {formatDateTime(report.createdAt)}</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <StatusBadge value={report.priority} />
-              <StatusBadge value={report.status} />
-              <Button icon={Eye} onClick={() => onSelect(report)} size="sm" type="button" variant="secondary" />
-            </div>
-          </div>
-        </article>
-      ))}
-    </section>
+    <AdminTable>
+      <AdminTableHead>
+        <AdminTableHeaderCell>Habitacion</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Tipo</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Descripcion</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Reportado por</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Fecha</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Estado</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Accion</AdminTableHeaderCell>
+      </AdminTableHead>
+      <tbody>
+        {reports.map((report) => (
+          <AdminTableRow key={report.id} onClick={() => onSelect(report)}>
+            <AdminTableCell className="font-black text-park-black">Habitacion {report.room?.number || report.task?.room?.number || "-"}</AdminTableCell>
+            <AdminTableCell>{report.type?.replaceAll("_", " ")}</AdminTableCell>
+            <AdminTableCell>{report.description}</AdminTableCell>
+            <AdminTableCell>{report.reportedBy ? `${report.reportedBy.firstName} ${report.reportedBy.lastName}` : report.task?.assignedTo || "Sin asignar"}</AdminTableCell>
+            <AdminTableCell>{formatDateTime(report.createdAt)}</AdminTableCell>
+            <AdminTableCell><StatusBadge value={report.status} /></AdminTableCell>
+            <AdminTableCell><Button icon={Eye} onClick={(event) => { event.stopPropagation(); onSelect(report); }} size="sm" type="button" variant="secondary" /></AdminTableCell>
+          </AdminTableRow>
+        ))}
+      </tbody>
+    </AdminTable>
   );
 }
 
 function CleaningDetail({ task, onClose }) {
   const groups = splitEvidence(task.evidences);
   return (
-    <div className="fixed inset-0 z-40 bg-slate-950/30 p-4">
-      <aside className="ml-auto h-full max-w-5xl overflow-auto rounded-card bg-white p-5 shadow-drawer">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-xs font-black uppercase text-park-gold">Detalle de revision</p>
-            <h3 className="font-sans text-2xl font-black text-park-black">Habitacion {task.room?.number}</h3>
+    <AdminDrawer open={true} onClose={onClose} title={`Habitacion ${task.room?.number}`} width="w-full max-w-5xl">
+      <div className="mt-5 grid gap-5 xl:grid-cols-[1fr_1.2fr_1fr]">
+        <Panel title="Informacion general">
+          <div className="grid gap-3">
+            <InfoTile label="Tipo" value={task.room?.type?.name || "No registrado"} />
+            <InfoTile label="Prioridad" value={<StatusBadge value={task.priority} />} />
+            <InfoTile label="Estado" value={<StatusBadge value={task.status} />} />
+            <InfoTile label="Empleado" value={task.assignedTo || "Sin asignar"} />
+            <InfoTile label="Inicio" value={formatDateTime(task.startedAt)} />
+            <InfoTile label="Finalizacion" value={formatDateTime(task.finishedAt)} />
           </div>
-          <Button onClick={onClose} size="sm" type="button" variant="secondary">Cerrar</Button>
-        </div>
-        <div className="mt-5 grid gap-5 xl:grid-cols-[1fr_1.2fr_1fr]">
-          <Panel title="Informacion general">
-            <div className="grid gap-3">
-              <InfoTile label="Tipo" value={task.room?.type?.name || "No registrado"} />
-              <InfoTile label="Prioridad" value={<StatusBadge value={task.priority} />} />
-              <InfoTile label="Estado" value={<StatusBadge value={task.status} />} />
-              <InfoTile label="Empleado" value={task.assignedTo || "Sin asignar"} />
-              <InfoTile label="Inicio" value={formatDateTime(task.startedAt)} />
-              <InfoTile label="Finalizacion" value={formatDateTime(task.finishedAt)} />
+        </Panel>
+        <Panel title="Evidencias">
+          <EvidenceBlock items={groups.entry} label="Entrada" />
+          <EvidenceBlock items={groups.exit} label="Salida" />
+        </Panel>
+        <Panel title="Novedades / Danos">
+          {task.operationalReports?.length ? (
+            <div className="space-y-3">
+              {task.operationalReports.map((report) => (
+                <div className="rounded-card border border-amber-200 bg-amber-50 p-3" key={report.id}>
+                  <div className="flex items-start justify-between gap-2"><p className="font-black text-park-black">{report.description}</p><StatusBadge value={report.priority} /></div>
+                  <p className="mt-2 text-xs text-park-muted">{formatDateTime(report.createdAt)}</p>
+                </div>
+              ))}
             </div>
-          </Panel>
-          <Panel title="Evidencias">
-            <EvidenceBlock items={groups.entry} label="Entrada" />
-            <EvidenceBlock items={groups.exit} label="Salida" />
-          </Panel>
-          <Panel title="Novedades / Danos">
-            {task.operationalReports?.length ? (
-              <div className="space-y-3">
-                {task.operationalReports.map((report) => (
-                  <div className="rounded-card border border-amber-200 bg-amber-50 p-3" key={report.id}>
-                    <div className="flex items-start justify-between gap-2"><p className="font-black text-park-black">{report.description}</p><StatusBadge value={report.priority} /></div>
-                    <p className="mt-2 text-xs text-park-muted">{formatDateTime(report.createdAt)}</p>
-                  </div>
-                ))}
-              </div>
-            ) : <EmptyState title="Sin novedades" description="No se registraron danos para esta revision." />}
-          </Panel>
-        </div>
-      </aside>
-    </div>
+          ) : <EmptyState title="Sin novedades" description="No se registraron danos para esta revision." />}
+        </Panel>
+      </div>
+    </AdminDrawer>
   );
 }
 

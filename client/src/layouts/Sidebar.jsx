@@ -29,29 +29,28 @@ export function Sidebar({ open, onClose }) {
 
   return (
     <aside ref={sidebarRef} className={`${open ? "translate-x-0" : "-translate-x-full"} fixed inset-y-0 left-0 z-40 flex w-72 flex-col bg-park-dark text-white transition-transform lg:translate-x-0`}>
-      <div className="p-6">
+      <div className="p-5 border-b border-white/5">
         <div className="flex items-center gap-3">
           <img
-            className="h-16 w-16 shrink-0 rounded-full border border-white/15 bg-black object-cover"
+            className="h-10 w-10 shrink-0 rounded-md border border-white/15 bg-black object-cover"
             src={logoParkPlaza}
             alt="Hotel Park Plaza"
           />
           <div>
-            <p className="text-xs uppercase text-park-gold">Hotel</p>
-            <h1 className="font-display text-2xl font-semibold uppercase leading-none text-park-gold">Park Plaza</h1>
-            <p className="mt-2 text-xs font-bold uppercase text-white/75">ERP Hotelero</p>
+            <h1 className="font-display text-lg font-semibold uppercase leading-none text-white tracking-wide">Park Plaza</h1>
+            <p className="text-[10px] font-bold uppercase text-park-accent-soft tracking-widest mt-1">ERP Hotelero</p>
           </div>
         </div>
-        <div className="mt-4 rounded-card border border-white/10 bg-white/5 p-3">
-          <p className="text-sm font-semibold text-white">{user?.firstName} {user?.lastName}</p>
-          <p className="mt-1 text-xs font-bold uppercase text-park-gold">{user?.role}</p>
+        <div className="mt-5 flex items-center justify-between rounded-lg bg-park-primary/50 px-3 py-2 border border-park-primary">
+          <span className="text-sm font-medium text-white truncate max-w-[120px]">{user?.firstName} {user?.lastName}</span>
+          <span className="text-[9px] font-bold uppercase text-park-accent-soft bg-park-accent/20 px-1.5 py-0.5 rounded">{user?.role}</span>
         </div>
       </div>
 
-      <nav className="sidebar-scroll grid gap-5 overflow-y-auto px-4 pb-5">
+      <nav className="sidebar-scroll grid gap-6 overflow-y-auto px-4 py-5">
         {sections.map((section) => (
           <div key={section.label}>
-            <p className="mb-2 px-3 text-[11px] font-bold uppercase tracking-wide text-white/45">{section.label}</p>
+            <p className="mb-2 px-2 text-[10px] font-bold uppercase tracking-widest text-park-accent-soft/60">{section.label}</p>
             <div className="grid gap-1">
               {section.items.map((item) => Array.isArray(item) ? (
                 <SidebarLink item={item} key={item[1]} onClose={onClose} />
@@ -85,7 +84,7 @@ function SidebarLink({ item, onClose, child = false }) {
       onClick={onClose}
       className={({ isActive }) => {
         const active = isActive || isSidebarLinkActive(location.pathname, href);
-        return `flex items-center gap-3 rounded-button px-3 py-2.5 text-sm font-semibold ${child ? "ml-6 py-2 text-xs" : ""} ${active ? "bg-park-gold text-park-black" : "text-white/82 hover:bg-white/10"}`;
+        return `flex items-center gap-3 rounded-button px-3 py-2 text-sm transition-colors ${child ? "ml-4 py-1.5 text-[13px]" : "font-medium"} ${active ? "bg-park-accent/20 text-park-accent-soft border border-park-accent/30" : "text-white/70 hover:bg-white/5 hover:text-white"}`;
       }}
     >
       <Icon size={child ? 15 : 18} />
@@ -101,7 +100,7 @@ function SidebarGroup({ item, expanded, onToggle, onClose }) {
   return (
     <div>
       <button
-        className={`flex w-full items-center gap-3 rounded-button px-3 py-2.5 text-left text-sm font-semibold ${expanded ? "bg-white/10 text-white" : "text-white/82 hover:bg-white/10"}`}
+        className={`flex w-full items-center gap-3 rounded-button px-3 py-2 text-left text-sm font-medium transition-colors ${expanded ? "bg-white/5 text-white" : "text-white/70 hover:bg-white/5 hover:text-white"}`}
         aria-controls={panelId}
         aria-expanded={expanded}
         onClick={onToggle}

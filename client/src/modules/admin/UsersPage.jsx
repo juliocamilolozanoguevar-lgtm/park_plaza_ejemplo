@@ -1,4 +1,4 @@
-﻿
+
 import { CalendarDays, CheckCircle2, Eye, KeyRound, MoreVertical, Pencil, RefreshCw, Search, ShieldCheck, Trash2, UserPlus, UserRound, Users, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
@@ -6,7 +6,7 @@ import { EmptyState } from "../../components/EmptyState";
 import { LoadingSpinner } from "../../components/LoadingSpinner";
 import { StatusBadge } from "../../components/StatusBadge";
 import { Toast } from "../../components/Toast";
-import { Button, PageHeader } from "../../components/ui";
+import { Button, PageHeader, AdminTable, AdminTableHead, AdminTableRow, AdminTableHeaderCell, AdminTableCell, AdminDrawer } from "../../components/ui";
 import { useAuth } from "../../context/AuthContext";
 import { useFetch } from "../../hooks/useFetch";
 import { api, getImageUrl } from "../../services/api";
@@ -95,12 +95,39 @@ export function UsersPage() {
 
 function UsersTable({ users, canEdit, canDelete, currentUser, auditLogs, menuOpen, setMenuOpen, onDetail, onModal, onQuickUpdate, saving }) {
   const columns = ["Trabajador", "DNI", "Rol / area", "Estado", "Asistencia actual", "Acceso", "Acciones"];
-  return <div className="overflow-x-auto rounded-card border border-park-border bg-white shadow-card"><table className="min-w-full text-left text-sm"><thead className="bg-park-bg text-xs uppercase text-park-muted"><tr>{columns.map((col) => <th className="px-4 py-3 font-black" key={col}>{col}</th>)}</tr></thead><tbody className="divide-y divide-park-border/70">{users.map((item) => <UserRow key={item.id} item={item} canEdit={canEdit} canDelete={canDelete} currentUser={currentUser} auditLogs={auditLogs} menuOpen={menuOpen} setMenuOpen={setMenuOpen} onDetail={onDetail} onModal={onModal} onQuickUpdate={onQuickUpdate} saving={saving} />)}</tbody></table></div>;
+  return (
+    <AdminTable>
+      <AdminTableHead>
+        {columns.map((col) => <AdminTableHeaderCell key={col}>{col}</AdminTableHeaderCell>)}
+      </AdminTableHead>
+      <tbody>
+        {users.map((item) => <UserRow key={item.id} item={item} canEdit={canEdit} canDelete={canDelete} currentUser={currentUser} auditLogs={auditLogs} menuOpen={menuOpen} setMenuOpen={setMenuOpen} onDetail={onDetail} onModal={onModal} onQuickUpdate={onQuickUpdate} saving={saving} />)}
+      </tbody>
+    </AdminTable>
+  );
 }
 
 function UserRow({ item, canEdit, canDelete, currentUser, auditLogs, menuOpen, setMenuOpen, onDetail, onModal, onQuickUpdate, saving }) {
   const isSelf = item.id === currentUser?.id;
-  return <tr className="hover:bg-park-green-soft/30"><td className="px-4 py-3"><div className="flex items-center gap-3"><Avatar user={item} /><div><p className="font-black text-park-black">{fullName(item)} {isSelf ? <span className="ml-2 rounded-full bg-park-green-soft px-2 py-0.5 text-[10px] font-black text-park-green">TU</span> : null}</p><p className="text-xs text-park-muted">{item.email}</p></div></div></td><td className="px-4 py-3 font-semibold text-park-black">{item.documentNumber || "-"}</td><td className="px-4 py-3"><p className="font-black text-park-black">{item.role?.name || "SIN ROL"}</p><p className="text-xs text-park-muted">{item.position || areaLabel(item.role?.name)}</p></td><td className="px-4 py-3"><StatusBadge value={item.status} /></td><td className="px-4 py-3"><p className="font-black text-park-green">Ver historial</p><p className="text-xs text-park-muted">Modulo conectado</p></td><td className="px-4 py-3"><AccessBadge status={item.status} /></td><td className="relative px-4 py-3"><button className="grid h-9 w-9 place-items-center rounded-button border border-park-border hover:border-park-green" onClick={() => setMenuOpen(menuOpen === item.id ? null : item.id)} type="button"><MoreVertical size={16} /></button>{menuOpen === item.id ? <ActionMenu item={item} canEdit={canEdit} canDelete={canDelete} isSelf={isSelf} saving={saving} onDetail={onDetail} onModal={onModal} onQuickUpdate={onQuickUpdate} /> : null}</td></tr>;
+  return (
+    <AdminTableRow className="hover:bg-park-green-soft/30">
+      <AdminTableCell>
+        <div className="flex items-center gap-3"><Avatar user={item} /><div><p className="font-black text-park-black">{fullName(item)} {isSelf ? <span className="ml-2 rounded-full bg-park-green-soft px-2 py-0.5 text-[10px] font-black text-park-green">TU</span> : null}</p><p className="text-xs text-park-muted">{item.email}</p></div></div>
+      </AdminTableCell>
+      <AdminTableCell className="font-semibold text-park-black">{item.documentNumber || "-"}</AdminTableCell>
+      <AdminTableCell>
+        <p className="font-black text-park-black">{item.role?.name || "SIN ROL"}</p><p className="text-xs text-park-muted">{item.position || areaLabel(item.role?.name)}</p>
+      </AdminTableCell>
+      <AdminTableCell><StatusBadge value={item.status} /></AdminTableCell>
+      <AdminTableCell>
+        <p className="font-black text-park-green">Ver historial</p><p className="text-xs text-park-muted">Modulo conectado</p>
+      </AdminTableCell>
+      <AdminTableCell><AccessBadge status={item.status} /></AdminTableCell>
+      <AdminTableCell className="relative">
+        <button className="grid h-9 w-9 place-items-center rounded-button border border-park-border hover:border-park-green" onClick={() => setMenuOpen(menuOpen === item.id ? null : item.id)} type="button"><MoreVertical size={16} /></button>{menuOpen === item.id ? <ActionMenu item={item} canEdit={canEdit} canDelete={canDelete} isSelf={isSelf} saving={saving} onDetail={onDetail} onModal={onModal} onQuickUpdate={onQuickUpdate} /> : null}
+      </AdminTableCell>
+    </AdminTableRow>
+  );
 }
 
 function ActionMenu({ item, canEdit, canDelete, isSelf, saving, onDetail, onModal, onQuickUpdate }) {
@@ -110,7 +137,40 @@ function ActionMenu({ item, canEdit, canDelete, isSelf, saving, onDetail, onModa
 
 function UserDrawer({ user, canEdit, roles, auditLogs, onClose, onModal }) {
   const currentRole = roles.find((role) => role.id === (user.roleId || user.role?.id) || role.name === user.role?.name);
-  return <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 p-4"><section className="max-h-[90vh] w-full max-w-4xl overflow-auto rounded-card border border-park-border bg-white p-6 shadow-drawer"><div className="flex items-start justify-between gap-4 border-b border-park-border pb-4"><div><p className="text-xs font-black uppercase text-park-gold">Informacion del trabajador</p><h2 className="mt-1 font-sans text-2xl font-black text-park-black">{fullName(user)}</h2></div><button className="grid h-9 w-9 place-items-center rounded-button border border-park-border" onClick={onClose} type="button"><X size={18} /></button></div><div className="mt-5 grid gap-6 lg:grid-cols-[220px_1fr]"><aside className="rounded-card border border-park-border bg-park-bg p-4 text-center"><Avatar user={user} xl /><h3 className="mt-4 font-sans text-lg font-black text-park-black">{fullName(user)}</h3><p className="text-sm text-park-muted">{areaLabel(user.role?.name)}</p><div className="mt-3 flex justify-center gap-2"><StatusBadge value={user.status} /><RoleBadge role={user.role?.name} /></div></aside><div className="grid gap-4 lg:grid-cols-2"><Panel title="Informacion personal"><Detail label="DNI" value={user.documentNumber} /><Detail label="Nombre completo" value={fullName(user)} /><Detail label="Fecha nacimiento" value={formatDateOnly(user.birthDate)} /><Detail label="Edad" value={calculateAge(user.birthDate)} /><Detail label="Correo" value={user.email} /><Detail label="Celular" value={user.phone} /></Panel><Panel title="Informacion laboral"><Detail label="Rol / area" value={currentRole?.name || user.role?.name} /><Detail label="Puesto" value={user.position || areaLabel(user.role?.name)} /><Detail label="Fecha ingreso" value={formatDateOnly(user.hireDate)} /><Detail label="Estado acceso" value={user.status === "ACTIVO" ? "Habilitado" : "Deshabilitado"} /><Detail label="Usuario" value={user.username || user.email} /><Detail label="Ultimo acceso" value={lastAccess(user, auditLogs)} /></Panel></div></div><div className="mt-6 flex justify-end gap-2"><Button type="button" variant="secondary" onClick={onClose}>Cerrar</Button>{canEdit ? <Button icon={Pencil} onClick={() => onModal({ type: "edit", user })}>Editar trabajador</Button> : null}</div></section></div>;
+  return (
+    <AdminDrawer open={true} onClose={onClose} title="Informacion del trabajador" width="w-full max-w-4xl">
+      <div className="flex items-center gap-4 mb-4">
+        <h2 className="font-sans text-2xl font-black text-park-black">{fullName(user)}</h2>
+        {canEdit ? <Button size="sm" icon={Pencil} onClick={() => onModal({ type: "edit", user })}>Editar</Button> : null}
+      </div>
+      <div className="grid gap-6 lg:grid-cols-[220px_1fr]">
+        <aside className="rounded-card border border-park-border bg-park-bg p-4 text-center">
+          <Avatar user={user} xl />
+          <h3 className="mt-4 font-sans text-lg font-black text-park-black">{fullName(user)}</h3>
+          <p className="text-sm text-park-muted">{areaLabel(user.role?.name)}</p>
+          <div className="mt-3 flex justify-center gap-2"><StatusBadge value={user.status} /><RoleBadge role={user.role?.name} /></div>
+        </aside>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Panel title="Informacion personal">
+            <Detail label="DNI" value={user.documentNumber} />
+            <Detail label="Nombre completo" value={fullName(user)} />
+            <Detail label="Fecha nacimiento" value={formatDateOnly(user.birthDate)} />
+            <Detail label="Edad" value={calculateAge(user.birthDate)} />
+            <Detail label="Correo" value={user.email} />
+            <Detail label="Celular" value={user.phone} />
+          </Panel>
+          <Panel title="Informacion laboral">
+            <Detail label="Rol / area" value={currentRole?.name || user.role?.name} />
+            <Detail label="Puesto" value={user.position || areaLabel(user.role?.name)} />
+            <Detail label="Fecha ingreso" value={formatDateOnly(user.hireDate)} />
+            <Detail label="Estado acceso" value={user.status === "ACTIVO" ? "Habilitado" : "Deshabilitado"} />
+            <Detail label="Usuario" value={user.username || user.email} />
+            <Detail label="Ultimo acceso" value={lastAccess(user, auditLogs)} />
+          </Panel>
+        </div>
+      </div>
+    </AdminDrawer>
+  );
 }
 
 function InfoTab({ user }) { return <section className="mt-5 space-y-5"><Panel title="Datos personales"><Detail label="DNI" value={user.documentNumber} /><Detail label="Nombre completo" value={fullName(user)} /><Detail label="Fecha nacimiento" value={formatDateOnly(user.birthDate)} /><Detail label="Edad" value={calculateAge(user.birthDate)} /><Detail label="Correo" value={user.email} /><Detail label="Celular" value={user.phone} /></Panel><Panel title="Acceso y seguridad"><Detail label="Rol actual" value={user.role?.name} /><Detail label="Estado" value={user.status} /><Detail label="Fecha ingreso" value={formatDateOnly(user.hireDate)} /><Detail label="Usuario" value={user.username || user.email} /><Detail label="Ultimo acceso" value={lastAccess(user)} /></Panel></section>; }

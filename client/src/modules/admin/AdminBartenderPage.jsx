@@ -4,7 +4,7 @@ import { EmptyState } from "../../components/EmptyState";
 import { LoadingSpinner } from "../../components/LoadingSpinner";
 import { OrderRecipePlan } from "../../components/OrderRecipePlan";
 import { StatusBadge } from "../../components/StatusBadge";
-import { Button, PageHeader, Tabs } from "../../components/ui";
+import { Button, PageHeader, Tabs, AdminTable, AdminTableHead, AdminTableRow, AdminTableHeaderCell, AdminTableCell, AdminDrawer, AdminMetricStrip } from "../../components/ui";
 import { useFetch } from "../../hooks/useFetch";
 import { ModuleNav } from "../../components/ui/ModuleNav";
 import { AdminFoodManagement } from "./AdminFoodManagement";
@@ -26,11 +26,11 @@ export function AdminBartenderPage({ view = "resumen" }) {
   if (loading) return <LoadingSpinner />;
 
   return (
-    <div className="space-y-5">
-      <PageHeader eyebrow="Administrador / Bartender" title={pageTitle(view)} description="Operacion del bar." />
+    <div className="space-y-6 pb-10">
+      <PageHeader eyebrow="Administrador / Bartender" title={pageTitle(view)} description="Operación del bar." />
       <ModuleNav items={[
         { label: "Resumen", href: "/admin/bartender/resumen" },
-        { label: "Gestion", href: "/admin/bartender/gestion" },
+        { label: "Gestión", href: "/admin/bartender/gestion" },
         { label: "Historial y reportes", href: "/admin/bartender/reportes" }
       ]} />
       {view === "resumen" ? <BartenderSummary audits={audits} inventorySummary={inventorySummary} orders={orders} reports={reports} requests={requests} onSelect={setSelected} /> : null}
@@ -38,12 +38,17 @@ export function AdminBartenderPage({ view = "resumen" }) {
       {view === "reportes" ? <AdminFoodReports area="BARTENDER" orders={orders} reports={reports} /> : null}
       {["pedidos", "historial"].includes(view) ? (
         <>
-          {view === "pedidos" ? <Tabs tabs={["TODOS", "PENDIENTE", "PREPARANDO", "LISTO", "ENTREGADO"].map((item) => ({ value: item, label: item === "TODOS" ? "Todos" : item.replaceAll("_", " ") }))} value={status} onChange={setStatus} /> : null}
+          {view === "pedidos" ? (
+            <div className="mb-4 overflow-x-auto">
+              <Tabs tabs={["TODOS", "PENDIENTE", "PREPARANDO", "LISTO", "ENTREGADO"].map((item) => ({ value: item, label: item === "TODOS" ? "Todos" : item.replaceAll("_", " ") }))} value={status} onChange={setStatus} />
+            </div>
+          ) : null}
           <OrdersTable orders={filteredOrders} onSelect={setSelected} />
         </>
       ) : null}
       {view === "incidencias" ? <IncidentsTable reports={reports} /> : null}
-      {selected ? <OrderDetail order={selected} onClose={() => setSelected(null)} /> : null}
+      
+      <OrderDetail order={selected} onClose={() => setSelected(null)} />
     </div>
   );
 }
@@ -55,128 +60,147 @@ function BartenderSummary({ orders, reports, audits, inventorySummary, requests,
   const active = orders.filter((item) => item.status !== "ENTREGADO" && item.status !== "CANCELADO").slice(0, 6);
   const criticalStock = (inventorySummary.lowStock || 0) + (inventorySummary.noStock || 0);
 
+  const metrics = [
+    { label: "Pedidos activos", value: pending + preparing },
+    { label: "Entregados hoy", value: deliveredToday },
+    { label: "Solicitudes", value: (requests || []).filter((item) => item.status === "PENDIENTE").length },
+    { label: "Stock crítico", value: criticalStock },
+  ];
+
   return (
     <>
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <Metric icon={Clock} label="Pedidos activos" tone="gold" value={pending + preparing} />
-        <Metric icon={AlertTriangle} label="Stock critico" tone="red" value={criticalStock} />
-        <Metric icon={PackageCheck} label="Solicitudes" tone="blue" value={(requests || []).filter((item) => item.status === "PENDIENTE").length} />
-        <Metric icon={PackageCheck} label="Entregados hoy" tone="green" value={deliveredToday} />
-      </section>
-      <section className="grid gap-5 xl:grid-cols-[1.4fr_1fr]">
+      <AdminMetricStrip metrics={metrics} />
+      
+      <section className="grid gap-6 xl:grid-cols-[1.4fr_1fr]">
         <Panel title="Pedidos activos">
-          <OrdersTable compact orders={active} onSelect={onSelect} />
+          <OrdersTable orders={active} onSelect={onSelect} />
         </Panel>
         <Panel title="Bebidas y alertas">
-          {reports.length ? reports.slice(0, 4).map((report) => (
-            <div className="mb-3 rounded-card border border-park-border bg-park-bg p-3" key={report.id}>
-              <div className="flex justify-between gap-3"><p className="font-black text-park-black">{report.code}</p><StatusBadge value={report.priority} /></div>
-              <p className="mt-1 text-sm text-park-muted">{report.description}</p>
+          {reports.length ? (
+            <div className="space-y-2">
+              {reports.slice(0, 4).map((report) => (
+                <div className="rounded-md border border-park-border bg-white p-3 shadow-sm" key={report.id}>
+                  <div className="flex justify-between gap-3"><p className="font-semibold text-park-dark text-sm">{report.code}</p><StatusBadge value={report.priority} /></div>
+                  <p className="mt-1 text-xs text-park-muted">{report.description}</p>
+                </div>
+              ))}
             </div>
-          )) : <EmptyState title="Sin incidencias" description="No hay problemas reportados por bartender." />}
+          ) : <EmptyState title="Sin incidencias" description="No hay problemas reportados por bartender." />}
         </Panel>
       </section>
     </>
   );
 }
 
-function OrdersTable({ orders, onSelect, compact = false }) {
+function OrdersTable({ orders, onSelect }) {
   if (!orders.length) return <EmptyState title="Sin pedidos" description="No hay pedidos para esta vista." />;
   return (
-    <section className={compact ? "" : "rounded-card border border-park-border bg-white p-5 shadow-card"}>
-      <div className="overflow-x-auto">
-        <table className="min-w-[720px] text-left text-sm">
-          <thead className="text-xs uppercase text-park-muted"><tr><th className="py-3">Pedido</th><th>Habitacion</th><th>Producto</th><th>Total</th><th>Estado</th><th>Fecha</th><th>Ver</th></tr></thead>
-          <tbody className="divide-y divide-park-border">
-            {orders.map((order) => (
-              <tr className="cursor-pointer transition hover:bg-park-bg" key={order.id} onClick={() => onSelect(order)}>
-                <td className="py-3 font-black text-park-black">{order.code}</td>
-                <td>{order.stay?.room?.number || order.roomId || "Piscina"}</td>
-                <td>{itemsLabel(order)}</td>
-                <td>S/ {Number(order.total).toFixed(2)}</td>
-                <td><StatusBadge value={order.status} /></td>
-                <td>{formatDateTime(order.updatedAt || order.createdAt)}</td>
-                <td><Button className="h-8 w-8 px-0" icon={Eye} onClick={(event) => { event.stopPropagation(); onSelect(order); }} size="sm" type="button" variant="secondary" /></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
+    <AdminTable>
+      <AdminTableHead>
+        <AdminTableHeaderCell>Pedido</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Habitación</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Producto</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Total</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Estado</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Fecha</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Acciones</AdminTableHeaderCell>
+      </AdminTableHead>
+      <tbody>
+        {orders.map((order) => (
+          <AdminTableRow key={order.id} onClick={() => onSelect(order)}>
+            <AdminTableCell className="font-semibold text-park-dark">{order.code}</AdminTableCell>
+            <AdminTableCell>{order.stay?.room?.number || order.roomId || "Piscina"}</AdminTableCell>
+            <AdminTableCell className="max-w-[200px] truncate" title={itemsLabel(order)}>{itemsLabel(order)}</AdminTableCell>
+            <AdminTableCell>S/ {Number(order.total).toFixed(2)}</AdminTableCell>
+            <AdminTableCell><StatusBadge value={order.status} /></AdminTableCell>
+            <AdminTableCell>{formatDateTime(order.updatedAt || order.createdAt)}</AdminTableCell>
+            <AdminTableCell>
+              <Button className="h-8 w-8 px-0" icon={Eye} onClick={(event) => { event.stopPropagation(); onSelect(order); }} size="sm" type="button" variant="secondary" />
+            </AdminTableCell>
+          </AdminTableRow>
+        ))}
+      </tbody>
+    </AdminTable>
   );
 }
 
 function IncidentsTable({ reports }) {
   if (!reports.length) return <EmptyState title="Sin incidencias" description="No hay reportes operativos del bartender." />;
   return (
-    <section className="rounded-card border border-park-border bg-white p-5 shadow-card">
-      <div className="overflow-x-auto">
-        <table className="min-w-full text-left text-sm">
-          <thead className="text-xs uppercase text-park-muted"><tr><th className="py-3">Codigo</th><th>Descripcion</th><th>Prioridad</th><th>Reportado por</th><th>Fecha</th><th>Estado</th></tr></thead>
-          <tbody className="divide-y divide-park-border">
-            {reports.map((report) => (
-              <tr key={report.id}>
-                <td className="py-3 font-black text-park-black">{report.code}</td>
-                <td>{report.description}</td>
-                <td><StatusBadge value={report.priority} /></td>
-                <td>{report.reportedBy ? `${report.reportedBy.firstName} ${report.reportedBy.lastName}` : "No registrado"}</td>
-                <td>{formatDateTime(report.createdAt)}</td>
-                <td><StatusBadge value={report.status} /></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
+    <AdminTable>
+      <AdminTableHead>
+        <AdminTableHeaderCell>Código</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Descripción</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Prioridad</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Reportado por</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Fecha</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Estado</AdminTableHeaderCell>
+      </AdminTableHead>
+      <tbody>
+        {reports.map((report) => (
+          <AdminTableRow key={report.id}>
+            <AdminTableCell className="font-semibold text-park-dark">{report.code}</AdminTableCell>
+            <AdminTableCell className="max-w-[250px] truncate" title={report.description}>{report.description}</AdminTableCell>
+            <AdminTableCell><StatusBadge value={report.priority} /></AdminTableCell>
+            <AdminTableCell>{report.reportedBy ? `${report.reportedBy.firstName} ${report.reportedBy.lastName}` : "No registrado"}</AdminTableCell>
+            <AdminTableCell>{formatDateTime(report.createdAt)}</AdminTableCell>
+            <AdminTableCell><StatusBadge value={report.status} /></AdminTableCell>
+          </AdminTableRow>
+        ))}
+      </tbody>
+    </AdminTable>
   );
 }
 
 function OrderDetail({ order, onClose }) {
   return (
-    <div className="fixed inset-0 z-40 bg-slate-950/30 p-4">
-      <aside className="ml-auto h-full max-w-md overflow-auto rounded-card bg-white p-5 shadow-drawer">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-xs font-black uppercase text-park-gold">Detalle de pedido</p>
-            <h3 className="font-sans text-xl font-black text-park-black">{order.code}</h3>
-          </div>
-          <button className="grid h-9 w-9 place-items-center rounded-button border border-park-border text-park-muted hover:text-park-black" onClick={onClose} type="button"><X size={18} /></button>
+    <AdminDrawer open={!!order} onClose={onClose} title={order ? `Detalle de Pedido ${order.code}` : "Pedido"} width="w-full max-w-md">
+      {order && (
+        <div className="space-y-5">
+          <div><StatusBadge value={order.status} /></div>
+          
+          <Panel title="Información general" className="mt-0">
+            <DetailRow label="Habitación" value={order.stay?.room?.number || order.roomId || "Piscina"} />
+            <DetailRow label="Producto" value={itemsLabel(order)} />
+            <DetailRow label="Total" value={`S/ ${Number(order.total).toFixed(2)}`} />
+            <DetailRow label="Recibido" value={formatDateTime(order.createdAt)} />
+            <DetailRow label="Actualizado" value={formatDateTime(order.updatedAt)} />
+            <DetailRow label="Bartender" value={order.createdBy?.firstName || "No registrado"} />
+          </Panel>
+          
+          <OrderRecipePlan plan={order.recipePlan} />
+          
+          <Panel title="Historial del pedido">
+            {historyFor(order).map((item) => (
+              <div className="flex gap-3 pb-3 last:pb-0" key={item}>
+                <span className="mt-1.5 h-2 w-2 rounded-full bg-park-accent" />
+                <p className="text-sm font-medium text-park-dark">{item}</p>
+              </div>
+            ))}
+          </Panel>
         </div>
-        <div className="mt-3"><StatusBadge value={order.status} /></div>
-        <Panel title="Informacion general">
-          <DetailRow label="Habitacion" value={order.stay?.room?.number || order.roomId || "Piscina"} />
-          <DetailRow label="Producto" value={itemsLabel(order)} />
-          <DetailRow label="Total" value={`S/ ${Number(order.total).toFixed(2)}`} />
-          <DetailRow label="Recibido" value={formatDateTime(order.createdAt)} />
-          <DetailRow label="Actualizado" value={formatDateTime(order.updatedAt)} />
-          <DetailRow label="Bartender" value={order.createdBy?.firstName || "No registrado"} />
-        </Panel>
-        <OrderRecipePlan plan={order.recipePlan} />
-        <Panel title="Historial del pedido">
-          {historyFor(order).map((item) => (
-            <div className="flex gap-3 pb-3 last:pb-0" key={item}>
-              <span className="mt-1 h-2.5 w-2.5 rounded-full bg-park-green" />
-              <p className="text-sm font-semibold text-park-black">{item}</p>
-            </div>
-          ))}
-        </Panel>
-      </aside>
-    </div>
+      )}
+    </AdminDrawer>
   );
 }
 
-function Metric({ icon: Icon, label, value, tone }) {
-  const tones = { gold: "bg-park-gold-soft text-park-gold", blue: "bg-blue-50 text-blue-700", green: "bg-park-green-soft text-park-green", red: "bg-red-50 text-park-danger" };
-  return <article className="rounded-card border border-park-border bg-white p-5 shadow-card"><span className={`grid h-11 w-11 place-items-center rounded-button ${tones[tone]}`}><Icon size={20} /></span><p className="mt-4 text-sm font-semibold text-park-muted">{label}</p><strong className="font-display text-[28px] font-semibold text-park-dark">{value}</strong></article>;
-}
-
-function Panel({ title, children }) {
-  return <section className="mt-5 rounded-card border border-park-border bg-white p-5 shadow-card"><h2 className="mb-4 font-sans text-lg font-black text-park-black">{title}</h2>{children}</section>;
+function Panel({ title, children, className = "" }) {
+  return (
+    <section className={`rounded-lg border border-park-border bg-white p-5 shadow-sm ${className}`}>
+      <h2 className="mb-4 text-base font-semibold text-park-dark">{title}</h2>
+      {children}
+    </section>
+  );
 }
 
 function DetailRow({ label, value }) {
   if (!value) return null;
-  return <div className="mb-3 grid grid-cols-[110px_1fr] gap-3 text-sm last:mb-0"><span className="font-semibold text-park-muted">{label}</span><strong className="text-park-black">{value}</strong></div>;
+  return (
+    <div className="mb-3 grid grid-cols-[110px_1fr] gap-3 text-sm last:mb-0">
+      <span className="font-medium text-park-muted">{label}</span>
+      <strong className="font-medium text-park-dark">{value}</strong>
+    </div>
+  );
 }
 
 function filterOrders(view, orders, status) {
@@ -187,7 +211,7 @@ function filterOrders(view, orders, status) {
 
 function historyFor(order) {
   const steps = ["Pedido recibido"];
-  if (["PREPARANDO", "LISTO", "ENTREGADO"].includes(order.status)) steps.push("Preparacion iniciada");
+  if (["PREPARANDO", "LISTO", "ENTREGADO"].includes(order.status)) steps.push("Preparación iniciada");
   if (["LISTO", "ENTREGADO"].includes(order.status)) steps.push("Marcado como listo");
   if (order.status === "ENTREGADO") steps.push("Pedido entregado");
   return steps;
@@ -198,7 +222,7 @@ function itemsLabel(order) {
 }
 
 function pageTitle(view) {
-  const titles = { resumen: "Bartender - Resumen", pedidos: "Bartender - Pedidos", gestion: "Bartender - Gestion", reportes: "Bartender - Historial y reportes", historial: "Bartender - Historial", incidencias: "Bartender - Incidencias" };
+  const titles = { resumen: "Bartender - Resumen", pedidos: "Bartender - Pedidos", gestion: "Bartender - Gestión", reportes: "Bartender - Historial y reportes", historial: "Bartender - Historial", incidencias: "Bartender - Incidencias" };
   return titles[view] || titles.resumen;
 }
 

@@ -5,7 +5,7 @@ import { EmptyState } from "../../components/EmptyState";
 import { LoadingSpinner } from "../../components/LoadingSpinner";
 import { OrderRecipePlan } from "../../components/OrderRecipePlan";
 import { StatusBadge } from "../../components/StatusBadge";
-import { Button, PageHeader, Tabs } from "../../components/ui";
+import { Button, PageHeader, Tabs, AdminTable, AdminTableHead, AdminTableRow, AdminTableHeaderCell, AdminTableCell, AdminDrawer, AdminMetricStrip } from "../../components/ui";
 import { useFetch } from "../../hooks/useFetch";
 import { ModuleNav } from "../../components/ui/ModuleNav";
 import { AdminFoodManagement } from "./AdminFoodManagement";
@@ -40,8 +40,8 @@ export function AdminRestaurantPage({ view = "resumen" }) {
   if (loading) return <LoadingSpinner />;
 
   return (
-    <div className="space-y-5">
-      <PageHeader eyebrow="Administrador" title="Restaurante" description="Operacion de cocina y servicio." />
+    <div className="space-y-6 pb-10">
+      <PageHeader eyebrow="Administrador" title="Restaurante" description="Operación de cocina y servicio." />
       <ModuleNav items={[
         { label: "Operación", href: "/admin/restaurante/resumen" },
         { label: "Carta y recetas", href: "/admin/restaurante/platos-y-recetas" },
@@ -65,8 +65,9 @@ export function AdminRestaurantPage({ view = "resumen" }) {
       {normalizedView === "gestion" ? <AdminFoodManagement area="RESTAURANTE" allowProduction /> : null}
       {normalizedView === "reportes" ? <AdminFoodReports area="RESTAURANTE" orders={orders} reports={reports} allowProduction /> : null}
       {normalizedView === "incidencias" ? <IncidentsView reports={filteredReports} search={incidentSearch} setSearch={setIncidentSearch} priority={priority} setPriority={setPriority} status={incidentStatus} setStatus={setIncidentStatus} onSelect={setSelectedReport} /> : null}
-      {selected ? <OrderDetail order={selected} onClose={() => setSelected(null)} /> : null}
-      {selectedReport ? <ReportDetail report={selectedReport} onClose={() => setSelectedReport(null)} /> : null}
+      
+      <OrderDetail order={selected} onClose={() => setSelected(null)} />
+      <ReportDetail report={selectedReport} onClose={() => setSelectedReport(null)} />
     </div>
   );
 }
@@ -78,7 +79,7 @@ function RestaurantOperationsView({
   const [activeTab, setActiveTab] = useState("Resumen");
   
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <div className="mb-2 overflow-x-auto border-b border-park-border">
         <nav className="-mb-px flex min-w-max gap-6">
           {["Resumen", "Pedidos activos", "Produccion", "Insumos y Mermas"].map((tab) => (
@@ -87,8 +88,8 @@ function RestaurantOperationsView({
               onClick={() => setActiveTab(tab)}
               className={`whitespace-nowrap border-b-2 py-3 px-1 text-sm font-semibold transition-colors ${
                 activeTab === tab
-                  ? "border-park-green text-park-green"
-                  : "border-transparent text-park-muted hover:border-park-border hover:text-park-black"
+                  ? "border-park-primary text-park-primary"
+                  : "border-transparent text-park-muted hover:border-park-border hover:text-park-dark"
               }`}
             >
               {tab}
@@ -129,12 +130,7 @@ function RestaurantControlView({
   const [activeTab, setActiveTab] = useState("Consumo");
 
   return (
-    <div className="space-y-5">
-      <div>
-        <h2 className="font-display text-2xl font-black text-park-black uppercase">Control</h2>
-        <p className="text-sm text-park-muted">Consulta y seguimiento de la operación del restaurante.</p>
-      </div>
-
+    <div className="space-y-6">
       <div className="mb-2 overflow-x-auto border-b border-park-border">
         <nav className="-mb-px flex min-w-max gap-6">
           {["Consumo", "Mermas", "Incidencias"].map((tab) => (
@@ -143,8 +139,8 @@ function RestaurantControlView({
               onClick={() => setActiveTab(tab)}
               className={`whitespace-nowrap border-b-2 py-3 px-1 text-sm font-semibold transition-colors ${
                 activeTab === tab
-                  ? "border-park-green text-park-green"
-                  : "border-transparent text-park-muted hover:border-park-border hover:text-park-black"
+                  ? "border-park-primary text-park-primary"
+                  : "border-transparent text-park-muted hover:border-park-border hover:text-park-dark"
               }`}
             >
               {tab}
@@ -156,7 +152,7 @@ function RestaurantControlView({
       {activeTab === "Consumo" ? (
         <div className="space-y-4">
           <div>
-            <h3 className="text-lg font-black text-park-black">Historial de consumo</h3>
+            <h3 className="text-lg font-bold text-park-dark">Historial de consumo</h3>
             <p className="text-sm text-park-muted">Consulta el comportamiento del restaurante por período.</p>
           </div>
           <AdminConsumptionHistory orders={orders} />
@@ -187,26 +183,32 @@ function RestaurantSummary({ orders, reports, audits, inventorySummary, producti
   const criticalStock = (inventorySummary.lowStock || 0) + (inventorySummary.noStock || 0);
   const recent = orders.slice(0, 8);
   const recentReports = reports.slice(0, 5);
+  
+  const metrics = [
+    { label: "Pedidos activos", value: activeOrders },
+    { label: "Producción", value: productionSummary.total || 0 },
+    { label: "Merma del día", value: Number(productionSummary.totalWaste || 0).toFixed(2) },
+    { label: "Stock crítico", value: criticalStock },
+  ];
 
   return (
     <>
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <Metric icon={Clock} label="Pedidos activos" tone="gold" value={activeOrders} onClick={() => onStatus("TODOS")} />
-        <Metric icon={ChefHat} label="Produccion" tone="blue" value={productionSummary.total || 0} />
-        <Metric icon={Flame} label="Merma del dia" tone="orange" value={Number(productionSummary.totalWaste || 0).toFixed(2)} />
-        <Metric icon={AlertTriangle} label="Stock critico" tone="red" value={criticalStock} />
-      </section>
-      <section className="grid gap-5 xl:grid-cols-[1.4fr_1fr]">
+      <AdminMetricStrip metrics={metrics} />
+      <section className="grid gap-6 xl:grid-cols-[1.4fr_1fr]">
         <Panel title="Actividad reciente">
-          <OrdersTable compact orders={recent} onSelect={onSelect} />
+          <OrdersTable orders={recent} onSelect={onSelect} />
         </Panel>
         <Panel title="Alertas">
-          {recentReports.length ? recentReports.map((report) => (
-            <button className="mb-3 w-full rounded-card border border-park-border bg-park-bg p-3 text-left hover:border-park-green" key={report.id} onClick={() => onReportSelect(report)} type="button">
-              <div className="flex justify-between gap-3"><p className="font-black text-park-black">{report.code}</p><StatusBadge value={report.priority} /></div>
-              <p className="mt-1 text-sm text-park-muted">{report.description}</p>
-            </button>
-          )) : <EmptyState title="Sin incidencias" description="No hay problemas reportados desde restaurante." />}
+          {recentReports.length ? (
+            <div className="space-y-2">
+              {recentReports.map((report) => (
+                <button className="w-full rounded-md border border-park-border bg-white p-3 text-left hover:border-park-primary transition-colors" key={report.id} onClick={() => onReportSelect(report)} type="button">
+                  <div className="flex justify-between gap-3"><p className="font-semibold text-park-dark text-sm">{report.code}</p><StatusBadge value={report.priority} /></div>
+                  <p className="mt-1 text-xs text-park-muted">{report.description}</p>
+                </button>
+              ))}
+            </div>
+          ) : <EmptyState title="Sin incidencias" description="No hay problemas reportados desde restaurante." />}
         </Panel>
       </section>
     </>
@@ -215,11 +217,11 @@ function RestaurantSummary({ orders, reports, audits, inventorySummary, producti
 
 function OrdersView({ orders, search, setSearch, status, setStatus, onSelect }) {
   return (
-    <section className="rounded-card border border-park-border bg-white p-4 shadow-card">
-      <div className="mb-4 grid gap-3 lg:grid-cols-[1fr_auto] lg:items-end">
+    <section className="rounded-lg border border-park-border bg-white p-5 shadow-sm">
+      <div className="mb-4 grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
         <label>
-          <span className="text-xs font-black uppercase text-park-muted">Buscar</span>
-          <input className="mt-2 h-11 w-full rounded-input border border-park-border px-3 text-sm outline-none focus:border-park-green" placeholder="Codigo, habitacion, producto o responsable..." value={search} onChange={(event) => setSearch(event.target.value)} />
+          <span className="text-xs font-bold uppercase text-park-muted">Buscar</span>
+          <input className="mt-1.5 h-10 w-full rounded-md border border-park-border px-3 text-sm outline-none focus:border-park-primary focus:ring-1 focus:ring-park-primary" placeholder="Código, habitación, producto o responsable..." value={search} onChange={(event) => setSearch(event.target.value)} />
         </label>
         <div className="max-w-full overflow-x-auto">
           <Tabs tabs={orderStatusTabs()} value={status} onChange={setStatus} />
@@ -232,11 +234,11 @@ function OrdersView({ orders, search, setSearch, status, setStatus, onSelect }) 
 
 function IncidentsView({ reports, search, setSearch, priority, setPriority, status, setStatus, onSelect }) {
   return (
-    <section className="rounded-card border border-park-border bg-white p-4 shadow-card">
-      <div className="mb-4 grid gap-3 lg:grid-cols-[1fr_180px_180px] lg:items-end">
+    <section className="rounded-lg border border-park-border bg-white p-5 shadow-sm">
+      <div className="mb-4 grid gap-4 lg:grid-cols-[1fr_180px_180px] lg:items-end">
         <label>
-          <span className="text-xs font-black uppercase text-park-muted">Buscar</span>
-          <input className="mt-2 h-11 w-full rounded-input border border-park-border px-3 text-sm outline-none focus:border-park-green" placeholder="Codigo, tipo, descripcion o responsable..." value={search} onChange={(event) => setSearch(event.target.value)} />
+          <span className="text-xs font-bold uppercase text-park-muted">Buscar</span>
+          <input className="mt-1.5 h-10 w-full rounded-md border border-park-border px-3 text-sm outline-none focus:border-park-primary focus:ring-1 focus:ring-park-primary" placeholder="Código, tipo, descripción o responsable..." value={search} onChange={(event) => setSearch(event.target.value)} />
         </label>
         <Select label="Prioridad" value={priority} onChange={setPriority} options={["TODOS", "BAJA", "MEDIA", "ALTA", "CRITICA"]} />
         <Select label="Estado" value={status} onChange={setStatus} options={["TODOS", "ABIERTO", "EN_REVISION", "RESUELTO"]} />
@@ -246,141 +248,150 @@ function IncidentsView({ reports, search, setSearch, priority, setPriority, stat
   );
 }
 
-function OrdersTable({ orders, onSelect, compact = false }) {
+function OrdersTable({ orders, onSelect }) {
   if (!orders.length) return <EmptyState title="Sin pedidos" description="No hay pedidos para esta vista." />;
   return (
-    <section className={compact ? "" : ""}>
-      <div className="overflow-x-auto">
-        <table className="min-w-[760px] text-left text-sm">
-          <thead className="text-xs uppercase text-park-muted"><tr><th className="py-3">Pedido</th><th>Habitacion</th><th>Producto</th><th>Total</th><th>Estado</th><th>Hora</th><th>Ver</th></tr></thead>
-          <tbody className="divide-y divide-park-border">
-            {orders.map((order) => (
-              <tr className="cursor-pointer transition hover:bg-park-bg" key={order.id} onClick={() => onSelect(order)}>
-                <td className="py-3 font-black text-park-black">{order.code}</td>
-                <td>{order.stay?.room?.number || order.roomId || "Piscina"}</td>
-                <td>{itemsLabel(order)}</td>
-                <td>S/ {Number(order.total).toFixed(2)}</td>
-                <td><StatusBadge value={order.status} /></td>
-                <td>{formatDateTime(order.updatedAt || order.createdAt)}</td>
-                <td><Button className="h-8 w-8 px-0" icon={Eye} onClick={(event) => { event.stopPropagation(); onSelect(order); }} size="sm" type="button" variant="secondary" /></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
+    <AdminTable>
+      <AdminTableHead>
+        <AdminTableHeaderCell>Pedido</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Habitación</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Producto</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Total</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Estado</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Hora</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Acciones</AdminTableHeaderCell>
+      </AdminTableHead>
+      <tbody>
+        {orders.map((order) => (
+          <AdminTableRow key={order.id} onClick={() => onSelect(order)}>
+            <AdminTableCell className="font-semibold text-park-dark">{order.code}</AdminTableCell>
+            <AdminTableCell>{order.stay?.room?.number || order.roomId || "Piscina"}</AdminTableCell>
+            <AdminTableCell className="max-w-[200px] truncate" title={itemsLabel(order)}>{itemsLabel(order)}</AdminTableCell>
+            <AdminTableCell>S/ {Number(order.total).toFixed(2)}</AdminTableCell>
+            <AdminTableCell><StatusBadge value={order.status} /></AdminTableCell>
+            <AdminTableCell>{formatDateTime(order.updatedAt || order.createdAt)}</AdminTableCell>
+            <AdminTableCell>
+              <Button className="h-8 w-8 px-0" icon={Eye} onClick={(event) => { event.stopPropagation(); onSelect(order); }} size="sm" type="button" variant="secondary" />
+            </AdminTableCell>
+          </AdminTableRow>
+        ))}
+      </tbody>
+    </AdminTable>
   );
 }
 
 function IncidentsTable({ reports, onSelect }) {
   if (!reports.length) return <EmptyState title="Sin incidencias" description="No hay reportes operativos del restaurante." />;
   return (
-    <section>
-      <div className="overflow-x-auto">
-        <table className="min-w-[780px] text-left text-sm">
-          <thead className="text-xs uppercase text-park-muted"><tr><th className="py-3">Codigo</th><th>Tipo</th><th>Descripcion</th><th>Prioridad</th><th>Responsable</th><th>Fecha</th><th>Estado</th><th>Ver</th></tr></thead>
-          <tbody className="divide-y divide-park-border">
-            {reports.map((report) => (
-              <tr key={report.id}>
-                <td className="py-3 font-black text-park-black">{report.code}</td>
-                <td>{report.type?.replaceAll("_", " ")}</td>
-                <td>{report.description}</td>
-                <td><StatusBadge value={report.priority} /></td>
-                <td>{report.reportedBy ? `${report.reportedBy.firstName} ${report.reportedBy.lastName}` : "Sin asignar"}</td>
-                <td>{formatDateTime(report.createdAt)}</td>
-                <td><StatusBadge value={report.status} /></td>
-                <td><Button className="h-8 w-8 px-0" icon={Eye} onClick={() => onSelect(report)} size="sm" type="button" variant="secondary" /></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
+    <AdminTable>
+      <AdminTableHead>
+        <AdminTableHeaderCell>Código</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Tipo</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Descripción</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Prioridad</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Responsable</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Fecha</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Estado</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Acciones</AdminTableHeaderCell>
+      </AdminTableHead>
+      <tbody>
+        {reports.map((report) => (
+          <AdminTableRow key={report.id}>
+            <AdminTableCell className="font-semibold text-park-dark">{report.code}</AdminTableCell>
+            <AdminTableCell>{report.type?.replaceAll("_", " ")}</AdminTableCell>
+            <AdminTableCell className="max-w-[200px] truncate" title={report.description}>{report.description}</AdminTableCell>
+            <AdminTableCell><StatusBadge value={report.priority} /></AdminTableCell>
+            <AdminTableCell>{report.reportedBy ? `${report.reportedBy.firstName} ${report.reportedBy.lastName}` : "Sin asignar"}</AdminTableCell>
+            <AdminTableCell>{formatDateTime(report.createdAt)}</AdminTableCell>
+            <AdminTableCell><StatusBadge value={report.status} /></AdminTableCell>
+            <AdminTableCell>
+              <Button className="h-8 w-8 px-0" icon={Eye} onClick={() => onSelect(report)} size="sm" type="button" variant="secondary" />
+            </AdminTableCell>
+          </AdminTableRow>
+        ))}
+      </tbody>
+    </AdminTable>
   );
 }
 
 function OrderDetail({ order, onClose }) {
   return (
-    <div className="fixed inset-0 z-40 bg-slate-950/30 p-4">
-      <aside className="ml-auto h-full max-w-md overflow-auto rounded-card bg-white p-5 shadow-drawer">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-xs font-black uppercase text-park-gold">Detalle del pedido</p>
-            <h3 className="font-sans text-xl font-black text-park-black">{order.code}</h3>
-          </div>
-          <button className="grid h-9 w-9 place-items-center rounded-button border border-park-border text-park-muted hover:text-park-black" onClick={onClose} type="button"><X size={18} /></button>
+    <AdminDrawer open={!!order} onClose={onClose} title={order ? `Detalle de Pedido ${order.code}` : "Pedido"} width="w-full max-w-md">
+      {order && (
+        <div className="space-y-5">
+          <div><StatusBadge value={order.status} /></div>
+          
+          <Panel title="Información general" className="mt-0">
+            <DetailRow label="Habitación" value={order.stay?.room?.number || order.roomId || "Piscina"} />
+            <DetailRow label="Producto" value={itemsLabel(order)} />
+            <DetailRow label="Cantidad" value={quantityLabel(order)} />
+            <DetailRow label="Total" value={`S/ ${Number(order.total).toFixed(2)}`} />
+            <DetailRow label="Responsable" value={responsibleLabel(order)} />
+            <DetailRow label="Pedido" value={formatDateTime(order.createdAt)} />
+            <DetailRow label="Actualizado" value={formatDateTime(order.updatedAt)} />
+            <DetailRow label="Observaciones" value={order.notes} />
+          </Panel>
+          
+          <OrderRecipePlan plan={order.recipePlan} />
+          
+          <Panel title="Tiempos del pedido">
+            {historyFor(order).map((item) => (
+              <div className="flex gap-3 pb-3 last:pb-0" key={item}>
+                <span className="mt-1.5 h-2 w-2 rounded-full bg-park-accent" />
+                <p className="text-sm font-medium text-park-dark">{item}</p>
+              </div>
+            ))}
+          </Panel>
         </div>
-        <div className="mt-3"><StatusBadge value={order.status} /></div>
-        <Panel title="Informacion general">
-          <DetailRow label="Habitacion" value={order.stay?.room?.number || order.roomId || "Piscina"} />
-          <DetailRow label="Producto" value={itemsLabel(order)} />
-          <DetailRow label="Cantidad" value={quantityLabel(order)} />
-          <DetailRow label="Total" value={`S/ ${Number(order.total).toFixed(2)}`} />
-          <DetailRow label="Responsable" value={responsibleLabel(order)} />
-          <DetailRow label="Pedido" value={formatDateTime(order.createdAt)} />
-          <DetailRow label="Actualizado" value={formatDateTime(order.updatedAt)} />
-          <DetailRow label="Observaciones" value={order.notes} />
-        </Panel>
-        <OrderRecipePlan plan={order.recipePlan} />
-        <Panel title="Tiempos del pedido">
-          {historyFor(order).map((item) => (
-            <div className="flex gap-3 pb-3 last:pb-0" key={item}>
-              <span className="mt-1 h-2.5 w-2.5 rounded-full bg-park-green" />
-              <p className="text-sm font-semibold text-park-black">{item}</p>
-            </div>
-          ))}
-        </Panel>
-      </aside>
-    </div>
+      )}
+    </AdminDrawer>
   );
 }
 
 function ReportDetail({ report, onClose }) {
   return (
-    <div className="fixed inset-0 z-40 bg-slate-950/30 p-4">
-      <aside className="ml-auto h-full max-w-md overflow-auto rounded-card bg-white p-5 shadow-drawer">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-xs font-black uppercase text-park-gold">Detalle de incidencia</p>
-            <h3 className="font-sans text-xl font-black text-park-black">{report.code}</h3>
-          </div>
-          <button className="grid h-9 w-9 place-items-center rounded-button border border-park-border text-park-muted hover:text-park-black" onClick={onClose} type="button"><X size={18} /></button>
+    <AdminDrawer open={!!report} onClose={onClose} title={report ? `Incidencia ${report.code}` : "Incidencia"} width="w-full max-w-md">
+      {report && (
+        <div className="space-y-5">
+          <div className="flex gap-2"><StatusBadge value={report.priority} /><StatusBadge value={report.status} /></div>
+          
+          <Panel title="Información general" className="mt-0">
+            <DetailRow label="Tipo" value={report.type?.replaceAll("_", " ")} />
+            <DetailRow label="Descripción" value={report.description} />
+            <DetailRow label="Responsable" value={report.reportedBy ? `${report.reportedBy.firstName} ${report.reportedBy.lastName}` : "Sin asignar"} />
+            <DetailRow label="Fecha" value={formatDateTime(report.createdAt)} />
+            <DetailRow label="Producto" value={report.product?.name} />
+            <DetailRow label="Habitación" value={report.room?.number} />
+          </Panel>
+          
+          {report.evidences?.length ? (
+            <Panel title="Evidencias">
+              {report.evidences.map((evidence) => <DetailRow key={evidence.id} label="Archivo" value={evidence.url || evidence.path || evidence.fileName} />)}
+            </Panel>
+          ) : null}
         </div>
-        <div className="mt-3 flex gap-2"><StatusBadge value={report.priority} /><StatusBadge value={report.status} /></div>
-        <Panel title="Informacion general">
-          <DetailRow label="Tipo" value={report.type?.replaceAll("_", " ")} />
-          <DetailRow label="Descripcion" value={report.description} />
-          <DetailRow label="Responsable" value={report.reportedBy ? `${report.reportedBy.firstName} ${report.reportedBy.lastName}` : "Sin asignar"} />
-          <DetailRow label="Fecha" value={formatDateTime(report.createdAt)} />
-          <DetailRow label="Producto" value={report.product?.name} />
-          <DetailRow label="Habitacion" value={report.room?.number} />
-        </Panel>
-        {report.evidences?.length ? <Panel title="Evidencias">{report.evidences.map((evidence) => <DetailRow key={evidence.id} label="Archivo" value={evidence.url || evidence.path || evidence.fileName} />)}</Panel> : null}
-      </aside>
-    </div>
+      )}
+    </AdminDrawer>
   );
 }
 
-function Metric({ icon: Icon, label, value, tone, onClick }) {
-  const tones = {
-    gold: "bg-park-gold-soft text-park-gold",
-    orange: "bg-orange-50 text-orange-700",
-    blue: "bg-blue-50 text-blue-700",
-    purple: "bg-purple-50 text-purple-700",
-    green: "bg-park-green-soft text-park-green",
-    red: "bg-red-50 text-park-danger"
-  };
-  const Component = onClick ? "button" : "article";
-  return <Component className="rounded-card border border-park-border bg-white p-5 text-left shadow-card transition hover:border-park-green" onClick={onClick} type={onClick ? "button" : undefined}><span className={`grid h-11 w-11 place-items-center rounded-button ${tones[tone]}`}><Icon size={20} /></span><p className="mt-4 text-sm font-semibold text-park-muted">{label}</p><strong className="font-display text-[28px] font-semibold text-park-dark">{value}</strong>{onClick ? <span className="mt-1 block text-xs font-black text-park-green">Ver pedidos</span> : null}</Component>;
-}
-
-function Panel({ title, children }) {
-  return <section className="mt-5 rounded-card border border-park-border bg-white p-5 shadow-card"><h2 className="mb-4 font-sans text-lg font-black text-park-black">{title}</h2>{children}</section>;
+function Panel({ title, children, className = "" }) {
+  return (
+    <section className={`rounded-lg border border-park-border bg-white p-5 shadow-sm ${className}`}>
+      <h2 className="mb-4 text-base font-semibold text-park-dark">{title}</h2>
+      {children}
+    </section>
+  );
 }
 
 function DetailRow({ label, value }) {
   if (!value) return null;
-  return <div className="mb-3 grid grid-cols-[110px_1fr] gap-3 text-sm last:mb-0"><span className="font-semibold text-park-muted">{label}</span><strong className="text-park-black">{value}</strong></div>;
+  return (
+    <div className="mb-3 grid grid-cols-[110px_1fr] gap-3 text-sm last:mb-0">
+      <span className="font-medium text-park-muted">{label}</span>
+      <strong className="font-medium text-park-dark">{value}</strong>
+    </div>
+  );
 }
 
 function filterOrders(orders, status, search) {
@@ -412,13 +423,20 @@ function orderStatusTabs() {
 }
 
 function Select({ label, value, onChange, options }) {
-  return <label><span className="text-xs font-black uppercase text-park-muted">{label}</span><select className="mt-2 h-11 w-full rounded-input border border-park-border bg-white px-3 text-sm outline-none focus:border-park-green" value={value} onChange={(event) => onChange(event.target.value)}>{options.map((item) => <option key={item} value={item}>{item === "TODOS" ? "Todos" : item.replaceAll("_", " ")}</option>)}</select></label>;
+  return (
+    <label>
+      <span className="text-xs font-bold uppercase text-park-muted">{label}</span>
+      <select className="mt-1.5 h-10 w-full rounded-md border border-park-border bg-white px-3 text-sm outline-none focus:border-park-primary focus:ring-1 focus:ring-park-primary" value={value} onChange={(event) => onChange(event.target.value)}>
+        {options.map((item) => <option key={item} value={item}>{item === "TODOS" ? "Todos" : item.replaceAll("_", " ")}</option>)}
+      </select>
+    </label>
+  );
 }
 
 function historyFor(order) {
   const steps = ["Pedido recibido"];
   if (["EN_COCINA", "PREPARANDO", "LISTO", "ENTREGADO"].includes(order.status)) steps.push("En cocina");
-  if (["PREPARANDO", "LISTO", "ENTREGADO"].includes(order.status)) steps.push("Inicio preparacion");
+  if (["PREPARANDO", "LISTO", "ENTREGADO"].includes(order.status)) steps.push("Inicio preparación");
   if (["LISTO", "ENTREGADO"].includes(order.status)) steps.push("Listo");
   if (order.status === "ENTREGADO") steps.push("Entregado");
   return steps;
@@ -438,18 +456,7 @@ function responsibleLabel(order) {
   return "Sin asignar";
 }
 
-function countBy(items, key) {
-  return items.reduce((acc, item) => ({ ...acc, [item[key]]: (acc[item[key]] || 0) + 1 }), {});
-}
-
 function formatDateTime(value) {
   if (!value) return "No registrado";
   return new Date(value).toLocaleString("es-PE");
-}
-
-function isToday(value) {
-  if (!value) return false;
-  const date = new Date(value);
-  const today = new Date();
-  return date.getFullYear() === today.getFullYear() && date.getMonth() === today.getMonth() && date.getDate() === today.getDate();
 }

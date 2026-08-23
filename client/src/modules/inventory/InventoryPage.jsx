@@ -5,9 +5,8 @@ import { api } from "../../services/api";
 import { useFetch } from "../../hooks/useFetch";
 import { LoadingSpinner } from "../../components/LoadingSpinner";
 import { StatusBadge } from "../../components/StatusBadge";
-import { Table } from "../../components/Table";
 import { Toast } from "../../components/Toast";
-import { Input as UiInput, PageHeader, Select as UiSelect, Tabs } from "../../components/ui";
+import { Input as UiInput, PageHeader, Select as UiSelect, Tabs, AdminTable, AdminTableHead, AdminTableRow, AdminTableHeaderCell, AdminTableCell, AdminDrawer, AdminMetricStrip } from "../../components/ui";
 import { useAuth } from "../../context/AuthContext";
 
 const emptyProduct = { name: "", categoryId: "", area: "RESTAURANTE", unit: "unidad", stock: 0, minStock: 0, cost: 0, price: 0 };
@@ -227,14 +226,12 @@ export function InventoryPage() {
       <section className="rounded-card border border-park-border bg-white p-3 shadow-card">
         <Tabs tabs={sectionTabs} value={activeSection} onChange={setActiveSection} />
       </section>
-      <section className="rounded-card border border-park-border bg-white p-5 shadow-card">
-        <div className="mt-5 grid gap-3 md:grid-cols-4">
-          <Metric icon={<Boxes />} label="Productos" value={visibleSummary.totalProducts} />
-          <Metric icon={<SlidersHorizontal />} label="Stock bajo" value={visibleSummary.lowStock} />
-          <Metric icon={<Minus />} label="Sin stock" value={visibleSummary.noStock} />
-          <Metric icon={<ClipboardList />} label="Valor" value={`S/ ${Number(visibleSummary.value).toFixed(2)}`} />
-        </div>
-      </section>
+      <AdminMetricStrip metrics={[
+        { label: "Productos", value: visibleSummary.totalProducts },
+        { label: "Stock bajo", value: visibleSummary.lowStock },
+        { label: "Sin stock", value: visibleSummary.noStock },
+        { label: "Valor", value: `S/ ${Number(visibleSummary.value).toFixed(2)}` }
+      ]} />
 
       <section className="rounded-card border border-park-border bg-white p-5 shadow-card">
         <div className="grid gap-3 md:grid-cols-4">
@@ -391,63 +388,102 @@ function MovementFormDrawer({ mode, form, setForm, products, product, lots, onSu
 function ProductsTable({ area, products, canCreate, canDelete, canEdit, onDeactivate, onEdit, onMove, onSelect }) {
   if (!products.length) return <EmptyPanel title="Sin productos" description="No hay articulos que coincidan con los filtros." />;
   return (
-    <Table columns={area === "RESUMEN" ? ["Producto", "Area", "Stock", "Unidad", "Estado", "Categoria", "Accion"] : ["Producto", "Stock", "Unidad", "Estado", "Categoria", "Accion"]} rows={products} renderRow={(product) => (
-      <tr className="cursor-pointer transition hover:bg-park-bg" key={product.id} onClick={() => onSelect(product)}>
-        <td className="px-4 py-3 font-bold text-park-black">{product.name}</td>
-        {area === "RESUMEN" ? <td className="px-4 py-3">{areaLabel(product.area)}</td> : null}
-        <td className="px-4 py-3 font-black">{formatQty(product.stock)}</td>
-        <td className="px-4 py-3">{product.unit}</td>
-        <td className="px-4 py-3"><StatusBadge value={product.stockStatus} /></td>
-        <td className="px-4 py-3">{product.category?.name || "Sin categoria"}</td>
-        <td className="px-4 py-3">
-          <button
-            className="grid h-8 w-8 place-items-center rounded-button border border-park-border text-park-muted hover:text-park-green"
-            onClick={(event) => { event.stopPropagation(); onSelect(product); }}
-            title="Ver detalle"
-            type="button"
-          >
-            <MoreVertical size={16} />
-          </button>
-        </td>
-      </tr>
-    )} />
+    <AdminTable>
+      <AdminTableHead>
+        <AdminTableHeaderCell>Producto</AdminTableHeaderCell>
+        {area === "RESUMEN" ? <AdminTableHeaderCell>Area</AdminTableHeaderCell> : null}
+        <AdminTableHeaderCell>Stock</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Unidad</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Estado</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Categoria</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Accion</AdminTableHeaderCell>
+      </AdminTableHead>
+      <tbody>
+        {products.map((product) => (
+          <AdminTableRow key={product.id} onClick={() => onSelect(product)}>
+            <AdminTableCell className="font-bold text-park-black">{product.name}</AdminTableCell>
+            {area === "RESUMEN" ? <AdminTableCell>{areaLabel(product.area)}</AdminTableCell> : null}
+            <AdminTableCell className="font-black">{formatQty(product.stock)}</AdminTableCell>
+            <AdminTableCell>{product.unit}</AdminTableCell>
+            <AdminTableCell><StatusBadge value={product.stockStatus} /></AdminTableCell>
+            <AdminTableCell>{product.category?.name || "Sin categoria"}</AdminTableCell>
+            <AdminTableCell>
+              <button
+                className="grid h-8 w-8 place-items-center rounded-button border border-park-border text-park-muted hover:text-park-green"
+                onClick={(event) => { event.stopPropagation(); onSelect(product); }}
+                title="Ver detalle"
+                type="button"
+              >
+                <MoreVertical size={16} />
+              </button>
+            </AdminTableCell>
+          </AdminTableRow>
+        ))}
+      </tbody>
+    </AdminTable>
   );
 }
 
 function ProductionTable({ productions, movements, onSelect }) {
   if (!productions.length) return <EmptyPanel title="Sin producciones" description="Los procesos de transformacion de cocina apareceran aqui." />;
   return (
-    <Table columns={["Produccion", "Materia prima", "Entrada", "Resultado", "Salida", "Merma", "Rend.", "Estado", "Accion"]} rows={productions} renderRow={(item) => (
-      <tr className="cursor-pointer transition hover:bg-park-bg" key={item.id} onClick={() => onSelect({ ...item, relatedMovements: relatedProductionMovements(item, movements) })}>
-        <td className="px-4 py-3 font-black text-park-black">{item.code}</td>
-        <td className="px-4 py-3 font-semibold">{item.inputProduct?.name || "-"}</td>
-        <td className="px-4 py-3">{formatSmartQty(item.inputQty, item.inputProduct?.unit)}</td>
-        <td className="px-4 py-3 font-semibold">{item.outputProduct?.name || "-"}</td>
-        <td className="px-4 py-3">{formatSmartQty(item.outputQty, item.outputProduct?.unit)}</td>
-        <td className="px-4 py-3 font-black text-park-gold">{formatSmartQty(item.wasteQty, item.inputProduct?.unit)}</td>
-        <td className="px-4 py-3">{trimNumber(item.yieldPercent)}%</td>
-        <td className="px-4 py-3"><StatusBadge value={item.status} /></td>
-        <td className="px-4 py-3"><button className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-black text-park-green" onClick={(event) => { event.stopPropagation(); onSelect({ ...item, relatedMovements: relatedProductionMovements(item, movements) }); }} type="button"><Eye size={14} />Detalle</button></td>
-      </tr>
-    )} />
+    <AdminTable>
+      <AdminTableHead>
+        <AdminTableHeaderCell>Produccion</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Materia prima</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Entrada</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Resultado</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Salida</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Merma</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Rend.</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Estado</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Accion</AdminTableHeaderCell>
+      </AdminTableHead>
+      <tbody>
+        {productions.map((item) => (
+          <AdminTableRow key={item.id} onClick={() => onSelect({ ...item, relatedMovements: relatedProductionMovements(item, movements) })}>
+            <AdminTableCell className="font-black text-park-black">{item.code}</AdminTableCell>
+            <AdminTableCell className="font-semibold">{item.inputProduct?.name || "-"}</AdminTableCell>
+            <AdminTableCell>{formatSmartQty(item.inputQty, item.inputProduct?.unit)}</AdminTableCell>
+            <AdminTableCell className="font-semibold">{item.outputProduct?.name || "-"}</AdminTableCell>
+            <AdminTableCell>{formatSmartQty(item.outputQty, item.outputProduct?.unit)}</AdminTableCell>
+            <AdminTableCell className="font-black text-park-gold">{formatSmartQty(item.wasteQty, item.inputProduct?.unit)}</AdminTableCell>
+            <AdminTableCell>{trimNumber(item.yieldPercent)}%</AdminTableCell>
+            <AdminTableCell><StatusBadge value={item.status} /></AdminTableCell>
+            <AdminTableCell><button className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-black text-park-green" onClick={(event) => { event.stopPropagation(); onSelect({ ...item, relatedMovements: relatedProductionMovements(item, movements) }); }} type="button"><Eye size={14} />Detalle</button></AdminTableCell>
+          </AdminTableRow>
+        ))}
+      </tbody>
+    </AdminTable>
   );
 }
 
 function PreparationsTable({ recipes, onSelect }) {
   if (!recipes.length) return <EmptyPanel title="Sin preparaciones" description="No hay recetas activas de bartender configuradas." />;
   return (
-    <Table columns={["Producto final", "Receta", "Disponibilidad", "Estado", "Accion"]} rows={recipes} renderRow={(recipe) => {
-      const availability = recipeAvailability(recipe);
-      return (
-        <tr className="cursor-pointer transition hover:bg-park-bg" key={recipe.id} onClick={() => onSelect(recipe)}>
-          <td className="px-4 py-3 font-black text-park-black">{recipe.name}</td>
-          <td className="px-4 py-3">{recipe.items?.length || 0} ingredientes</td>
-          <td className="px-4 py-3"><StatusBadge value={availability.ok ? "OK" : "SIN_STOCK"} /></td>
-          <td className="px-4 py-3"><StatusBadge value={recipe.active ? "ACTIVO" : "INACTIVO"} /></td>
-          <td className="px-4 py-3"><button className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-black text-park-green" onClick={(event) => { event.stopPropagation(); onSelect(recipe); }} type="button"><Eye size={14} />Detalle</button></td>
-        </tr>
-      );
-    }} />
+    <AdminTable>
+      <AdminTableHead>
+        <AdminTableHeaderCell>Producto final</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Receta</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Disponibilidad</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Estado</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Accion</AdminTableHeaderCell>
+      </AdminTableHead>
+      <tbody>
+        {recipes.map((recipe) => {
+          const availability = recipeAvailability(recipe);
+          return (
+            <AdminTableRow key={recipe.id} onClick={() => onSelect(recipe)}>
+              <AdminTableCell className="font-black text-park-black">{recipe.name}</AdminTableCell>
+              <AdminTableCell>{recipe.items?.length || 0} ingredientes</AdminTableCell>
+              <AdminTableCell><StatusBadge value={availability.ok ? "OK" : "SIN_STOCK"} /></AdminTableCell>
+              <AdminTableCell><StatusBadge value={recipe.active ? "ACTIVO" : "INACTIVO"} /></AdminTableCell>
+              <AdminTableCell><button className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-black text-park-green" onClick={(event) => { event.stopPropagation(); onSelect(recipe); }} type="button"><Eye size={14} />Detalle</button></AdminTableCell>
+            </AdminTableRow>
+          );
+        })}
+      </tbody>
+    </AdminTable>
   );
 }
 
@@ -472,16 +508,28 @@ function WasteSection({ filters, products, rows, setFilters, onSelect }) {
         </div>
       </section>
       {!rows.length ? <EmptyPanel title="Sin mermas" description="No hay mermas que coincidan con los filtros." /> : (
-        <Table columns={["Producto", "Cantidad", "Tipo", "Responsable", "Fecha", "Accion"]} rows={rows} renderRow={(row) => (
-          <tr className="cursor-pointer transition hover:bg-park-bg" key={row.id} onClick={() => onSelect(row)}>
-            <td className="px-4 py-3 font-bold">{row.productName}</td>
-            <td className="px-4 py-3">{formatQty(row.quantity)} {row.unit}</td>
-            <td className="px-4 py-3"><StatusBadge value={row.type} /></td>
-            <td className="px-4 py-3">{row.responsible}</td>
-            <td className="px-4 py-3">{formatDate(row.createdAt)}</td>
-            <td className="px-4 py-3"><button className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-black text-park-green" onClick={(event) => { event.stopPropagation(); onSelect(row); }} type="button"><Eye size={14} />Detalle</button></td>
-          </tr>
-        )} />
+        <AdminTable>
+          <AdminTableHead>
+            <AdminTableHeaderCell>Producto</AdminTableHeaderCell>
+            <AdminTableHeaderCell>Cantidad</AdminTableHeaderCell>
+            <AdminTableHeaderCell>Tipo</AdminTableHeaderCell>
+            <AdminTableHeaderCell>Responsable</AdminTableHeaderCell>
+            <AdminTableHeaderCell>Fecha</AdminTableHeaderCell>
+            <AdminTableHeaderCell>Accion</AdminTableHeaderCell>
+          </AdminTableHead>
+          <tbody>
+            {rows.map((row) => (
+              <AdminTableRow key={row.id} onClick={() => onSelect(row)}>
+                <AdminTableCell className="font-bold">{row.productName}</AdminTableCell>
+                <AdminTableCell>{formatQty(row.quantity)} {row.unit}</AdminTableCell>
+                <AdminTableCell><StatusBadge value={row.type} /></AdminTableCell>
+                <AdminTableCell>{row.responsible}</AdminTableCell>
+                <AdminTableCell>{formatDate(row.createdAt)}</AdminTableCell>
+                <AdminTableCell><button className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-black text-park-green" onClick={(event) => { event.stopPropagation(); onSelect(row); }} type="button"><Eye size={14} />Detalle</button></AdminTableCell>
+              </AdminTableRow>
+            ))}
+          </tbody>
+        </AdminTable>
       )}
     </div>
   );
@@ -506,18 +554,32 @@ function InspectionsSection({ rows, value, onChange, onSelect }) {
           description={value === "PENDIENTE" ? "Los productos pendientes de revision apareceran aqui." : "Las revisiones resueltas apareceran aqui."}
         />
       ) : (
-        <Table columns={["Producto", "Lote", "Cantidad", "Area", "Motivo", "Fecha", "Estado", "Accion"]} rows={rows} renderRow={(row) => (
-          <tr className="cursor-pointer transition hover:bg-park-bg" key={row.id} onClick={() => onSelect(row)}>
-            <td className="px-4 py-3 font-bold text-park-black">{row.product?.name}</td>
-            <td className="px-4 py-3">{row.inventoryLot?.code || "-"}</td>
-            <td className="px-4 py-3">{formatSmartQty(row.quantity, row.product?.unit)}</td>
-            <td className="px-4 py-3">{areaLabel(row.area)}</td>
-            <td className="px-4 py-3">{row.reason}</td>
-            <td className="px-4 py-3">{formatDate(row.createdAt)}</td>
-            <td className="px-4 py-3"><StatusBadge value={row.status} /></td>
-            <td className="px-4 py-3"><button className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-black text-park-green" onClick={(event) => { event.stopPropagation(); onSelect(row); }} type="button"><Eye size={14} />Revisar</button></td>
-          </tr>
-        )} />
+        <AdminTable>
+          <AdminTableHead>
+            <AdminTableHeaderCell>Producto</AdminTableHeaderCell>
+            <AdminTableHeaderCell>Lote</AdminTableHeaderCell>
+            <AdminTableHeaderCell>Cantidad</AdminTableHeaderCell>
+            <AdminTableHeaderCell>Area</AdminTableHeaderCell>
+            <AdminTableHeaderCell>Motivo</AdminTableHeaderCell>
+            <AdminTableHeaderCell>Fecha</AdminTableHeaderCell>
+            <AdminTableHeaderCell>Estado</AdminTableHeaderCell>
+            <AdminTableHeaderCell>Accion</AdminTableHeaderCell>
+          </AdminTableHead>
+          <tbody>
+            {rows.map((row) => (
+              <AdminTableRow key={row.id} onClick={() => onSelect(row)}>
+                <AdminTableCell className="font-bold text-park-black">{row.product?.name}</AdminTableCell>
+                <AdminTableCell>{row.inventoryLot?.code || "-"}</AdminTableCell>
+                <AdminTableCell>{formatSmartQty(row.quantity, row.product?.unit)}</AdminTableCell>
+                <AdminTableCell>{areaLabel(row.area)}</AdminTableCell>
+                <AdminTableCell>{row.reason}</AdminTableCell>
+                <AdminTableCell>{formatDate(row.createdAt)}</AdminTableCell>
+                <AdminTableCell><StatusBadge value={row.status} /></AdminTableCell>
+                <AdminTableCell><button className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-black text-park-green" onClick={(event) => { event.stopPropagation(); onSelect(row); }} type="button"><Eye size={14} />Revisar</button></AdminTableCell>
+              </AdminTableRow>
+            ))}
+          </tbody>
+        </AdminTable>
       )}
     </div>
   );
@@ -525,16 +587,28 @@ function InspectionsSection({ rows, value, onChange, onSelect }) {
 
 function MovementsTable({ movements }) {
   return (
-    <Table columns={["Fecha", "Producto", "Tipo", "Cantidad", "Usuario", "Referencia"]} rows={movements || []} renderRow={(move) => (
-      <tr key={move.id}>
-        <td className="px-4 py-3">{formatDate(move.createdAt)}</td>
-        <td className="px-4 py-3 font-bold">{move.product?.name}</td>
-        <td className="px-4 py-3"><StatusBadge value={move.type} /></td>
-        <td className="px-4 py-3">{formatSmartQty(move.quantity, move.product?.unit)}</td>
-        <td className="px-4 py-3">{movementUser(move)}</td>
-        <td className="px-4 py-3">{formatReference(move.reference) || move.reason || "-"}</td>
-      </tr>
-    )} />
+    <AdminTable>
+      <AdminTableHead>
+        <AdminTableHeaderCell>Fecha</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Producto</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Tipo</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Cantidad</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Usuario</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Referencia</AdminTableHeaderCell>
+      </AdminTableHead>
+      <tbody>
+        {(movements || []).map((move) => (
+          <AdminTableRow key={move.id}>
+            <AdminTableCell>{formatDate(move.createdAt)}</AdminTableCell>
+            <AdminTableCell className="font-bold">{move.product?.name}</AdminTableCell>
+            <AdminTableCell><StatusBadge value={move.type} /></AdminTableCell>
+            <AdminTableCell>{formatSmartQty(move.quantity, move.product?.unit)}</AdminTableCell>
+            <AdminTableCell>{movementUser(move)}</AdminTableCell>
+            <AdminTableCell>{formatReference(move.reference) || move.reason || "-"}</AdminTableCell>
+          </AdminTableRow>
+        ))}
+      </tbody>
+    </AdminTable>
   );
 }
 
@@ -702,9 +776,8 @@ function WasteDetailDrawer({ row, onClose }) {
 
 function ProductDetailDrawer({ canCreate, canDelete, canEdit, product, onDeactivate, onEdit, onMove, onClose }) {
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/30 p-3">
-      <aside className="ml-auto flex h-full w-full max-w-lg flex-col overflow-auto rounded-card bg-white p-5 shadow-drawer">
-        <DrawerHeader eyebrow="Articulo" title={product.name} onClose={onClose} />
+    <AdminDrawer open={true} onClose={onClose} title={`Articulo - ${product.name}`} width="w-full max-w-lg">
+      <div className="space-y-5">
         <Panel title="Resumen">
           <DetailLine label="Area" value={areaLabel(product.area)} />
           <DetailLine label="Categoria" value={product.category?.name || "Sin categoria"} />
@@ -720,15 +793,15 @@ function ProductDetailDrawer({ canCreate, canDelete, canEdit, product, onDeactiv
           <DetailLine label="Precio venta" value={`S/ ${Number(product.price || 0).toFixed(2)}`} />
           <DetailLine label="Estado del articulo" value={product.status || "ACTIVO"} />
         </Panel>
-        <div className="mt-5 grid gap-2 border-t border-park-border pt-4 sm:grid-cols-2">
+        <div className="grid gap-2 border-t border-park-border pt-4 sm:grid-cols-2">
           {canCreate ? <button className="rounded-button border border-park-border px-4 py-2 text-sm font-black text-park-green" onClick={() => onMove("ENTRADA", product)} type="button">Registrar entrada</button> : null}
           {canCreate ? <button className="rounded-button border border-park-border px-4 py-2 text-sm font-black text-park-green" onClick={() => onMove("SALIDA", product)} type="button">Registrar salida</button> : null}
           {canCreate ? <button className="rounded-button border border-park-border px-4 py-2 text-sm font-black text-park-green" onClick={() => onMove("AJUSTE", product)} type="button">Ajustar</button> : null}
           {canEdit ? <button className="rounded-button bg-park-green px-4 py-2 text-sm font-black text-white" onClick={() => onEdit(product)} type="button">Editar</button> : null}
           {canDelete ? <button className="rounded-button border border-red-200 px-4 py-2 text-sm font-black text-park-danger sm:col-span-2" onClick={() => { onClose(); onDeactivate(product); }} type="button">Desactivar</button> : null}
         </div>
-      </aside>
-    </div>
+      </div>
+    </AdminDrawer>
   );
 }
 
@@ -858,25 +931,12 @@ function MiniRow({ left, middle, right }) {
 }
 
 function InventoryDrawer({ eyebrow, title, subtitle, onClose, children }) {
-  useEffect(() => {
-    const handleKeyDown = (event) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
-
+  const fullTitle = `${eyebrow ? eyebrow + " - " : ""}${title}`;
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/30 p-3" onMouseDown={onClose}>
-      <aside
-        className="ml-auto flex h-full w-full max-w-xl flex-col overflow-hidden rounded-card bg-white p-5 shadow-drawer"
-        onMouseDown={(event) => event.stopPropagation()}
-      >
-        <DrawerHeader eyebrow={eyebrow} title={title} onClose={onClose} />
-        {subtitle ? <p className="mt-2 text-sm font-semibold text-park-muted">{subtitle}</p> : null}
-        {children}
-      </aside>
-    </div>
+    <AdminDrawer open={true} onClose={onClose} title={fullTitle} width="w-full max-w-xl">
+      {subtitle ? <p className="mb-4 text-sm font-semibold text-park-muted">{subtitle}</p> : null}
+      {children}
+    </AdminDrawer>
   );
 }
 
