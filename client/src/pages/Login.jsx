@@ -53,9 +53,11 @@ export function Login() {
             Contrasena
             <input className="mt-2 h-11 w-full rounded-lg border border-slate-200 px-3 outline-none focus:border-park-green focus:ring-4 focus:ring-emerald-100" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} type="password" />
           </label>
-          {error ? <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm font-bold text-park-danger">{error}</p> : null}
-          <button className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-park-green px-4 py-3 font-black text-white hover:bg-park-dark" disabled={loading} type="submit">
-            <LogIn size={18} />
+          <div className="mt-4 min-h-[40px]">
+            {error ? <p className="rounded-lg bg-red-50 px-3 py-2 text-sm font-bold text-park-danger">{error}</p> : null}
+          </div>
+          <button className="mt-2 inline-flex w-full min-h-[52px] items-center justify-center gap-2 rounded-lg bg-park-green px-4 py-3 font-black text-white hover:bg-park-dark disabled:opacity-75 disabled:cursor-not-allowed transition-colors" disabled={loading} type="submit">
+            {loading ? <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" /> : <LogIn size={18} />}
             {loading ? "Ingresando..." : "Ingresar al ERP"}
           </button>
         </form>
