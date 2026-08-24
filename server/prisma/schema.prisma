@@ -1160,3 +1160,52 @@ model ServiceReservationExtra {
   serviceReservation ServiceReservation @relation(fields: [serviceReservationId], references: [id], onDelete: Cascade)
   serviceExtra       ServiceExtra       @relation(fields: [serviceExtraId], references: [id])
 }
+
+// --- FASE 0B: GuestRequest ---
+enum GuestRequestType {
+  TOALLAS
+  ALMOHADAS
+  LIMPIEZA
+  MANTENIMIENTO
+  ROOM_SERVICE
+  OTRO
+}
+
+enum GuestRequestStatus {
+  PENDIENTE
+  EN_PROCESO
+  RESUELTA
+  CANCELADA
+}
+
+enum GuestRequestPriority {
+  BAJA
+  NORMAL
+  ALTA
+  URGENTE
+}
+
+model GuestRequest {
+  id           Int                  @id @default(autoincrement())
+  clientId     Int
+  stayId       Int
+  roomId       Int
+  type         GuestRequestType
+  description  String
+  status       GuestRequestStatus   @default(PENDIENTE)
+  priority     GuestRequestPriority @default(NORMAL)
+  resolvedById Int?
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+  resolvedAt   DateTime?
+
+  client       Client   @relation(fields: [clientId], references: [id])
+  stay         Stay     @relation(fields: [stayId], references: [id])
+  room         Room     @relation(fields: [roomId], references: [id])
+  resolvedBy   User?    @relation("GuestRequestResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull)
+
+  @@index([clientId])
+  @@index([stayId])
+  @@index([status])
+  @@index([type])
+}
