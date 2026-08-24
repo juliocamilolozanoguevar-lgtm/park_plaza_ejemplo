@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { BedDouble, CalendarCheck, CreditCard, Eye, LogIn, LogOut, ShoppingBag, Users } from "lucide-react";
+import { Banknote, BedDouble, CalendarCheck, CreditCard, Eye, LogIn, LogOut, ScanLine, ShoppingBag, Users } from "lucide-react";
 import { LoadingSpinner } from "../../components/LoadingSpinner";
 import { MetricCard } from "../../components/MetricCard";
 import { StatusBadge } from "../../components/StatusBadge";
@@ -40,11 +40,29 @@ export function ReceptionPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        eyebrow="Operacion diaria"
-        title="Recepcion"
-        description="Resumen operativo para gestionar llegadas, salidas, pagos pendientes y disponibilidad desde datos reales."
+        eyebrow="Recepción conectada"
+        title="Centro de atención"
+        description="Valida ingresos, confirma pagos, atiende reservas y revisa pedidos activos desde una sola vista."
         actions={canCreateReservation ? <Button as={Link} to="/reservas" variant="gold">Nueva reserva</Button> : null}
       />
+
+      <section className="grid gap-4 lg:grid-cols-[1.4fr_0.8fr]">
+        <article className="rounded-card border border-park-green bg-park-green-soft p-5 shadow-card">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-wide text-park-green">Jornada operativa activa</p>
+              <h2 className="mt-1 font-display text-2xl font-semibold text-park-dark">Recepción lista para validar servicios</h2>
+              <p className="mt-2 max-w-2xl text-sm text-park-muted">El flujo sigue el repositorio: identificar cliente, revisar reserva, confirmar pago cuando corresponda y dar pase al servicio.</p>
+            </div>
+            <span className="grid size-14 place-items-center rounded-button bg-white text-park-green shadow-card"><ScanLine size={26} /></span>
+          </div>
+        </article>
+        <article className="rounded-card border border-park-border bg-white p-5 shadow-card">
+          <p className="text-xs font-black uppercase tracking-wide text-park-muted">Caja del día</p>
+          <strong className="mt-2 block text-3xl text-park-dark">S/ {Number(metrics.incomeToday || 0).toFixed(2)}</strong>
+          <p className="mt-1 flex items-center gap-2 text-sm text-park-muted"><Banknote size={16} /> Pagos registrados y sincronizados con reservas.</p>
+        </article>
+      </section>
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard label="Llegadas hoy" value={metrics.reservationsToday} hint="reservas con entrada hoy" icon={CalendarCheck} />
@@ -54,9 +72,9 @@ export function ReceptionPage() {
       </section>
 
       <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        {canViewClients ? <ModuleCard title="Buscar cliente" description="Consulta clientes por nombre, DNI o correo." href="/clientes" icon={Users} meta="Recepcion" /> : null}
-        {canViewCheckIn ? <ModuleCard title="Check-in" description="Confirma llegada y crea la estadia." href="/checkin" icon={LogIn} meta="Flujo guiado" /> : null}
-        {canViewCheckOut ? <ModuleCard title="Check-out" description="Revisa consumos, pagos y libera la habitacion a limpieza." href="/checkout" icon={LogOut} meta="Cierre" /> : null}
+        {canViewClients ? <ModuleCard title="Identificar cliente" description="Busca por nombre, DNI o correo antes de validar su experiencia." href="/clientes" icon={Users} meta="Recepción" /> : null}
+        {canViewCheckIn ? <ModuleCard title="Validar ingreso" description="Confirma llegada, reserva pagada y pase al servicio." href="/checkin" icon={LogIn} meta="Flujo guiado" /> : null}
+        {canViewCheckOut ? <ModuleCard title="Salida y cierre" description="Revisa consumos, pagos y libera la habitación." href="/checkout" icon={LogOut} meta="Cierre" /> : null}
         {canCreatePayment ? <ModuleCard title="Registrar pago" description="Consulta movimientos y pagos operativos." href="/pagos" icon={CreditCard} meta="Caja" /> : null}
       </section>
 

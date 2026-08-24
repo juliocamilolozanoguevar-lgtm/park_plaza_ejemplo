@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, ChefHat, Clock, Eye, MapPin, PackageCheck, Wine, X } from "lucide-react";
+import { CheckCircle2, ChefHat, Clock, Eye, MapPin, PackageCheck, Scale, Wine, X } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { Alert, Button, ModuleNav, PageHeader, Tabs } from "../../components/ui";
 import { EmptyState } from "../../components/EmptyState";
@@ -98,22 +98,21 @@ export function OrdersAreaPage({ area, embedded = false }) {
         </>
       ) : null}
 
-      <section className="grid gap-3 sm:grid-cols-4">
-        <Metric icon={Clock} label="Recibidos" value={list.filter((order) => order.status === "PENDIENTE").length} />
+      <section className="grid gap-3 sm:grid-cols-3">
+        <Metric icon={Clock} label="Pedidos activos" value={active.length} />
         <Metric icon={Icon} label={isBar ? "Bebidas preparando" : "Platos preparando"} value={list.filter((order) => ["EN_COCINA", "PREPARANDO"].includes(order.status)).length} />
         <Metric icon={CheckCircle2} label="Listos para entregar" value={list.filter((order) => order.status === "LISTO").length} />
-        <Metric icon={PackageCheck} label="Activos" value={active.length} />
       </section>
 
       <section className="flex flex-col gap-3 rounded-card border border-park-border bg-white p-4 shadow-card lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h2 className="text-balance text-lg font-black text-park-dark">Flujo en una sola pantalla</h2>
-          <p className="text-pretty text-sm text-park-muted">Recibido / Aceptar pedido / En preparación / Listo / Entregar</p>
+          <p className="text-pretty text-sm text-park-muted">
+            {isBar ? "Recibir → Preparar → Listo y descontado → Entregar" : "Recibir → Aceptar → Preparar → Listo y descontado → Entregar"}
+          </p>
         </div>
         <Tabs tabs={[
           { value: "ACTIVOS", label: "Activos" },
-          { value: "RECIBIDOS", label: "Recibidos" },
-          { value: "PREPARANDO", label: "Preparando" },
           { value: "LISTOS", label: "Listos" },
           { value: "ENTREGADOS", label: "Entregados" },
           { value: "TODOS", label: "Todos" }
@@ -145,7 +144,7 @@ export function OrdersAreaPage({ area, embedded = false }) {
 }
 
 function OrderCard({ order, area, canEdit, busy, onAdvance, onCancel, onSelect }) {
-  const target = nextStatus(order.status);
+  const target = nextStatus(area, order.status);
   const destination = destinationFor(order);
   return (
     <article className={`rounded-card border bg-white p-5 shadow-card ${order.status === "LISTO" ? "border-park-green" : "border-park-border"}`}>
@@ -168,7 +167,7 @@ function OrderCard({ order, area, canEdit, busy, onAdvance, onCancel, onSelect }
         <div className="flex flex-wrap gap-2">
           <Button type="button" variant="secondary" icon={Eye} onClick={onSelect}>Ver detalle</Button>
           {canEdit && !["ENTREGADO", "CANCELADO"].includes(order.status) ? <Button type="button" variant="ghost" onClick={onCancel}>Cancelar</Button> : null}
-          {canEdit && target ? <Button type="button" loading={busy} icon={target === "ENTREGADO" ? MapPin : area === "BARTENDER" ? Wine : ChefHat} variant={target === "ENTREGADO" ? "gold" : "primary"} onClick={() => onAdvance(target)}>{actionLabel(order.status, destination.label)}</Button> : null}
+          {canEdit && target ? <Button type="button" loading={busy} icon={target === "ENTREGADO" ? MapPin : target === "LISTO" ? Scale : area === "BARTENDER" ? Wine : ChefHat} variant={target === "ENTREGADO" ? "gold" : "primary"} onClick={() => onAdvance(target)}>{actionLabel(area, order.status, destination.label)}</Button> : null}
         </div>
       </div>
     </article>
@@ -191,7 +190,7 @@ function RecipeTicket({ item }) {
 }
 
 function OrderDetail({ area, canEdit, order, onClose, onStatus }) {
-  const next = nextStatus(order.status);
+  const next = nextStatus(area, order.status);
   return (
     <div className="fixed inset-0 z-40 bg-slate-950/30 p-4">
       <aside className="ml-auto h-full max-w-md overflow-auto rounded-card bg-white p-5 shadow-drawer">
@@ -226,8 +225,8 @@ function OrderDetail({ area, canEdit, order, onClose, onStatus }) {
         </section>
         {canEdit && next ? (
           <div className="mt-5 flex justify-end">
-            <Button type="button" icon={next === "ENTREGADO" ? MapPin : area === "BARTENDER" ? Wine : ChefHat} onClick={() => onStatus(order, next)}>
-              {actionLabel(order.status, destinationFor(order).label)}
+            <Button type="button" icon={next === "ENTREGADO" ? MapPin : next === "LISTO" ? Scale : area === "BARTENDER" ? Wine : ChefHat} onClick={() => onStatus(order, next)}>
+              {actionLabel(area, order.status, destinationFor(order).label)}
             </Button>
           </div>
         ) : null}
@@ -251,15 +250,17 @@ function CancelOrderModal({ order, onClose, onConfirm }) {
   );
 }
 
-function nextStatus(status) {
-  const flow = { PENDIENTE: "PREPARANDO", EN_COCINA: "PREPARANDO", PREPARANDO: "LISTO", LISTO: "ENTREGADO" };
+function nextStatus(area, status) {
+  const flow = area === "BARTENDER"
+    ? { PENDIENTE: "PREPARANDO", PREPARANDO: "LISTO", LISTO: "ENTREGADO" }
+    : { PENDIENTE: "EN_COCINA", EN_COCINA: "PREPARANDO", PREPARANDO: "LISTO", LISTO: "ENTREGADO" };
   return flow[status] || null;
 }
 
-function actionLabel(status, destination) {
-  if (status === "PENDIENTE") return "Aceptar pedido";
-  if (status === "EN_COCINA") return "Pasar a preparacion";
-  if (status === "PREPARANDO") return "Pedido listo";
+function actionLabel(area, status, destination) {
+  if (status === "PENDIENTE") return area === "BARTENDER" ? "Aceptar y preparar" : "Aceptar pedido";
+  if (status === "EN_COCINA") return "Iniciar preparacion";
+  if (status === "PREPARANDO") return "Terminado - descontar receta";
   if (status === "LISTO") return "Entregar en " + destination;
   return "Avanzar pedido";
 }
@@ -273,6 +274,7 @@ function destinationFor(order) {
 }
 
 function toastMessage(order, target) {
+  if (target === "EN_COCINA") return `${order.code} aceptado por cocina.`;
   if (target === "PREPARANDO") return `${order.code} aceptado y en preparacion.`;
   if (target === "LISTO") return `${order.code} listo para entregar.`;
   if (target === "ENTREGADO") return `${order.code} entregado.`;
