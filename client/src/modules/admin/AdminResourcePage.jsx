@@ -23,10 +23,15 @@ function clientName(client) {
   return client ? `${client.firstName || ""} ${client.lastName || ""}`.trim() : "-";
 }
 
+function orderClientLabel(order) {
+  return clientName(order.client || order.stay?.client);
+}
+
 function paymentContext(item) {
   if (item.stay?.room?.number) return `Estadia hab. ${item.stay.room.number}`;
   if (item.reservation?.room?.number) return `Reserva ${item.reservation.code || ""} hab. ${item.reservation.room.number}`.trim();
   if (item.event?.name) return `Evento ${item.event.name}`;
+  if (item.serviceReservation?.code) return `${item.serviceReservation.serviceType} ${item.serviceReservation.code}`;
   return "Pago manual";
 }
 
@@ -52,9 +57,13 @@ function rowSearchText(type, item) {
       item.code,
       item.area,
       item.status,
+      item.client?.firstName,
+      item.client?.lastName,
+      item.client?.documentNumber,
       item.stay?.client?.firstName,
       item.stay?.client?.lastName,
       item.stay?.client?.documentNumber,
+      item.room?.number,
       item.stay?.room?.number
     ].join(" ");
   }
@@ -171,7 +180,7 @@ function nextOrderStatus(order) {
   return flow[order.status] || null;
 }
 
-function buildReceivables(reservations = [], stays = [], events = []) {
+function buildReceivables(reservations = [], stays = [], events = [], serviceReservations = []) {
   const reservationItems = (Array.isArray(reservations) ? reservations : [])
     .filter((reservation) => Number(reservation.balance || 0) > 0 && !["CANCELADA", "NO_SHOW", "COMPLETADA"].includes(reservation.status))
     .map((reservation) => ({
@@ -231,7 +240,25 @@ function buildReceivables(reservations = [], stays = [], events = []) {
       }
     }));
 
-  return [...stayItems, ...reservationItems, ...eventItems].sort((a, b) => b.balance - a.balance).slice(0, 8);
+  const serviceItems = (Array.isArray(serviceReservations) ? serviceReservations : [])
+    .filter((reservation) => Number(reservation.balance || 0) > 0 && !["CANCELADA", "FINALIZADA"].includes(reservation.status))
+    .map((reservation) => ({
+      key: `service-${reservation.id}`,
+      origin: "Servicio",
+      client: clientName(reservation.client),
+      document: reservation.client?.documentNumber || "-",
+      operation: `${reservation.code} - ${reservation.serviceType}`,
+      balance: Number(reservation.balance || 0),
+      payload: {
+        clientId: reservation.clientId,
+        serviceReservationId: reservation.id,
+        area: reservation.serviceType,
+        concept: `Pago reserva ${reservation.serviceType.toLowerCase()} ${reservation.code}`,
+        amount: Number(reservation.balance || 0).toFixed(2)
+      }
+    }));
+
+  return [...stayItems, ...reservationItems, ...serviceItems, ...eventItems].sort((a, b) => b.balance - a.balance).slice(0, 12);
 }
 
 function buildInvoiceCandidates(payments = []) {
@@ -270,7 +297,7 @@ const configs = {
     description: "Pedidos y consumos operativos registrados por areas.",
     endpoint: "/orders",
     columns: ["Codigo", "Cliente", "Habitacion", "Area", "Estado", "Total"],
-    row: (item) => [item.code, item.stay?.client ? `${item.stay.client.firstName} ${item.stay.client.lastName}` : "-", item.stay?.room?.number || item.roomId || "-", item.area, <StatusBadge value={item.status} />, money(item.total)]
+    row: (item) => [item.code, orderClientLabel(item), item.stay?.room?.number || item.room?.number || item.roomId || "-", item.area, <StatusBadge value={item.status} />, money(item.total)]
   },
   cochera: {
     title: "Cochera",
@@ -383,6 +410,7 @@ export function AdminResourcePage({ type }) {
   const { data: reservationsData, reload: reloadReservations } = useFetch("/reservations", { initialData: [], enabled: type === "pagos" });
   const { data: staysData, reload: reloadStays } = useFetch("/checkout/stays", { initialData: [], enabled: type === "pagos" });
   const { data: eventsData, reload: reloadEvents } = useFetch("/events", { initialData: [], enabled: type === "pagos" });
+  const { data: serviceReservationsData, reload: reloadServiceReservations } = useFetch("/service-reservations", { initialData: [], enabled: type === "pagos" });
   const { data: paymentsData, reload: reloadPaymentsForInvoices } = useFetch("/pagos", { initialData: [], enabled: type === "facturacion" });
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
@@ -401,7 +429,7 @@ export function AdminResourcePage({ type }) {
   const filterOptions = resourceFilterOptions(type, rows);
   const scopedRows = type === "consumos" && consumptionSection !== "RESUMEN" ? rows.filter((item) => item.area === consumptionSection) : rows;
   const visibleRows = filterableResources.includes(type) ? filterResourceRows(type, scopedRows, search, resourceFilter) : scopedRows;
-  const receivables = type === "pagos" ? buildReceivables(reservationsData, staysData, eventsData) : [];
+  const receivables = type === "pagos" ? buildReceivables(reservationsData, staysData, eventsData, serviceReservationsData) : [];
   const invoiceCandidates = type === "facturacion" ? buildInvoiceCandidates(paymentsData) : [];
   const context = {
     parkingSpaces: type === "cochera" ? rows : [],
@@ -421,7 +449,7 @@ export function AdminResourcePage({ type }) {
       await api(path, { method, body: payload });
       await reload();
       if (type === "pagos") {
-        await Promise.all([reloadReservations(), reloadStays(), reloadEvents()]);
+        await Promise.all([reloadReservations(), reloadStays(), reloadEvents(), reloadServiceReservations()]);
       }
       if (type === "facturacion") {
         await reloadPaymentsForInvoices();
@@ -508,7 +536,7 @@ export function AdminResourcePage({ type }) {
           </section>
           
           <div className="grid gap-6 xl:grid-cols-2 items-start">
-            <ReceivablesPanel items={receivables} />
+            <ReceivablesPanel items={receivables} canCreate={canCreate} onSelect={(item) => setFormPrefill({ ...item.payload, method: "EFECTIVO" })} />
             
             <section className="rounded-card border border-park-border bg-white p-5 shadow-card">
               <div className="mb-4 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -672,11 +700,11 @@ function ResourceForm({ type, onSubmit, saving, context, prefill }) {
         ) : null}
         {type === "pagos" || type === "caja" ? (
           <>
-            {type === "pagos" && (form.reservationId || form.stayId || form.eventId) ? (
+            {type === "pagos" && (form.reservationId || form.stayId || form.eventId || form.serviceReservationId) ? (
               <div className="rounded-card border border-park-border bg-park-bg p-3 text-sm md:col-span-2 xl:col-span-4">
                 <span className="font-black text-park-dark">Operacion vinculada</span>
                 <p className="mt-1 text-park-muted">
-                  {form.stayId ? `Estadia #${form.stayId}` : form.reservationId ? `Reserva #${form.reservationId}` : `Evento #${form.eventId}`}
+                  {form.stayId ? `Estadia #${form.stayId}` : form.reservationId ? `Reserva #${form.reservationId}` : form.serviceReservationId ? `Servicio #${form.serviceReservationId}` : `Evento #${form.eventId}`}
                 </p>
               </div>
             ) : null}
@@ -822,10 +850,10 @@ function SettingsPanel({ rows, onSubmit, saving }) {
   );
 }
 
-function ReceivablesPanel({ items }) {
+function ReceivablesPanel({ items, canCreate, onSelect }) {
   const [filter, setFilter] = useState("TODOS");
 
-  const origins = ["Reserva", "Estadia", "Evento"];
+  const origins = ["Reserva", "Estadia", "Servicio", "Evento"];
   const filteredItems = items.filter((item) => filter === "TODOS" || item.origin.toUpperCase() === filter.toUpperCase());
 
   return (
@@ -859,6 +887,7 @@ function ReceivablesPanel({ items }) {
               <AdminTableHeaderCell>REFERENCIA</AdminTableHeaderCell>
               <AdminTableHeaderCell>CONCEPTO</AdminTableHeaderCell>
               <AdminTableHeaderCell className="text-right">SALDO</AdminTableHeaderCell>
+              <AdminTableHeaderCell className="text-right">ACCION</AdminTableHeaderCell>
             </AdminTableHead>
             <tbody>
               {filteredItems.map((item) => (
@@ -873,6 +902,13 @@ function ReceivablesPanel({ items }) {
                   <AdminTableCell>{item.operation}</AdminTableCell>
                   <AdminTableCell>{item.payload?.concept || "-"}</AdminTableCell>
                   <AdminTableCell className="text-right font-display font-semibold text-park-dark">{money(item.balance)}</AdminTableCell>
+                  <AdminTableCell className="text-right">
+                    {canCreate ? (
+                      <Button size="sm" type="button" onClick={() => onSelect(item)}>
+                        Confirmar efectivo
+                      </Button>
+                    ) : "-"}
+                  </AdminTableCell>
                 </AdminTableRow>
               ))}
             </tbody>
@@ -925,7 +961,7 @@ function defaultForm(type) {
     cochera: { spaceId: "", plate: "", brand: "", model: "" },
     proveedores: { ruc: "", name: "", phone: "", email: "", status: "ACTIVO" },
     compras: { supplierId: "", productId: "", quantity: "1", cost: "0", supplierLotCode: "", expiresAt: "" },
-    pagos: { clientId: "", reservationId: "", stayId: "", eventId: "", area: "RECEPCION", concept: "", method: "EFECTIVO", amount: "" },
+    pagos: { clientId: "", reservationId: "", stayId: "", eventId: "", serviceReservationId: "", area: "RECEPCION", concept: "", method: "EFECTIVO", amount: "" },
     facturacion: { clientId: "", paymentId: "", type: "BOLETA", series: "B001", subtotal: "", tax: "", total: "" },
     caja: { type: "INGRESO", concept: "", method: "EFECTIVO", amount: "" },
     usuarios: { firstName: "", lastName: "", email: "", roleId: "", status: "ACTIVO" },

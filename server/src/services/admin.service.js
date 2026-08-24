@@ -158,7 +158,7 @@ export async function receivePurchase(id, userId) {
 
 export function listPayments() {
   return prisma.payment.findMany({
-    include: { client: true, reservation: { include: { room: true } }, stay: { include: { room: true } }, event: true, invoice: true },
+    include: { client: true, reservation: { include: { room: true } }, stay: { include: { room: true } }, event: true, serviceReservation: true, invoice: true },
     orderBy: { paidAt: "desc" },
     take: 200
   });
@@ -175,6 +175,7 @@ export async function createPayment(data, userId) {
         reservationId: data.reservationId ? Number(data.reservationId) : null,
         stayId: data.stayId ? Number(data.stayId) : null,
         eventId: data.eventId ? Number(data.eventId) : null,
+        serviceReservationId: data.serviceReservationId ? Number(data.serviceReservationId) : null,
         method: data.method,
         reference: data.reference || null,
         area: data.area,
@@ -183,6 +184,42 @@ export async function createPayment(data, userId) {
         createdById: userId
       }
     });
+    if (data.reservationId && !data.stayId) {
+      const reservation = await tx.reservation.findUnique({ where: { id: Number(data.reservationId) } });
+      if (reservation) {
+        if (amount > money(reservation.balance)) throw new HttpError(422, "El pago excede el saldo de la reserva.");
+        const nextAdvance = Math.min(money(reservation.totalPrice), money(reservation.advance) + amount);
+        const nextBalance = Math.max(0, money(reservation.totalPrice) - nextAdvance);
+        await tx.reservation.update({
+          where: { id: reservation.id },
+          data: { advance: nextAdvance, balance: nextBalance, status: nextBalance === 0 ? "CONFIRMADA" : reservation.status }
+        });
+      }
+    }
+    if (data.eventId) {
+      const event = await tx.event.findUnique({ where: { id: Number(data.eventId) } });
+      if (event) {
+        if (amount > money(event.balance)) throw new HttpError(422, "El pago excede el saldo del evento.");
+        const nextAdvance = Math.min(money(event.price), money(event.advance) + amount);
+        const nextBalance = Math.max(0, money(event.price) - nextAdvance);
+        await tx.event.update({
+          where: { id: event.id },
+          data: { advance: nextAdvance, balance: nextBalance, status: nextBalance === 0 ? "CONFIRMADO" : event.status }
+        });
+      }
+    }
+    if (data.serviceReservationId) {
+      const serviceReservation = await tx.serviceReservation.findUnique({ where: { id: Number(data.serviceReservationId) } });
+      if (serviceReservation) {
+        if (amount > money(serviceReservation.balance)) throw new HttpError(422, "El pago excede el saldo del servicio.");
+        const nextAdvance = Math.min(money(serviceReservation.totalAmount), money(serviceReservation.advance) + amount);
+        const nextBalance = Math.max(0, money(serviceReservation.totalAmount) - nextAdvance);
+        await tx.serviceReservation.update({
+          where: { id: serviceReservation.id },
+          data: { advance: nextAdvance, balance: nextBalance, status: nextBalance === 0 ? "CONFIRMADA" : serviceReservation.status }
+        });
+      }
+    }
     await tx.cashMovement.create({
       data: {
         cashRegisterId: openCash.id,

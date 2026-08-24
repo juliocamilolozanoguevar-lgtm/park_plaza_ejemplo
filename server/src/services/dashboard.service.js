@@ -8,6 +8,22 @@ function todayBounds() {
   return { start, end };
 }
 
+async function hydrateOrderContext(orders) {
+  const clientIds = [...new Set(orders.map((order) => order.clientId).filter(Boolean))];
+  const roomIds = [...new Set(orders.map((order) => order.roomId).filter(Boolean))];
+  const [clients, rooms] = await Promise.all([
+    clientIds.length ? prisma.client.findMany({ where: { id: { in: clientIds } } }) : [],
+    roomIds.length ? prisma.room.findMany({ where: { id: { in: roomIds } }, include: { type: true } }) : []
+  ]);
+  const clientMap = new Map(clients.map((client) => [client.id, client]));
+  const roomMap = new Map(rooms.map((room) => [room.id, room]));
+  return orders.map((order) => ({
+    ...order,
+    client: order.stay?.client || clientMap.get(order.clientId) || null,
+    room: order.stay?.room || roomMap.get(order.roomId) || null
+  }));
+}
+
 export async function getDashboard() {
   const { start, end } = todayBounds();
 
@@ -39,7 +55,7 @@ export async function getDashboard() {
     prisma.product.findMany({ where: { stock: { lte: prisma.product.fields.minStock } }, include: { category: true }, take: 8 }),
     prisma.event.findMany({ where: { startsAt: { gte: start } }, include: { client: true, space: true }, orderBy: { startsAt: "asc" }, take: 5 }),
     prisma.auditLog.findMany({ include: { user: true }, orderBy: { createdAt: "desc" }, take: 8 }),
-    prisma.order.findMany({ where: { status: { in: ["PENDIENTE", "EN_COCINA", "PREPARANDO", "LISTO"] } }, include: { items: true }, take: 6, orderBy: { createdAt: "desc" } }),
+    prisma.order.findMany({ where: { status: { in: ["PENDIENTE", "EN_COCINA", "PREPARANDO", "LISTO"] } }, include: { items: true, stay: { include: { client: true, room: { include: { type: true } } } } }, take: 6, orderBy: { createdAt: "desc" } }),
     prisma.poolEntry.count({ where: { entryAt: { gte: start, lt: end } } }),
     prisma.parkingSpace.groupBy({ by: ["status"], _count: true }),
     prisma.cleaningTask.findMany({ where: { status: { in: ["PENDIENTE", "EN_LIMPIEZA"] } }, include: { room: { include: { type: true } } }, take: 6 }),
@@ -84,7 +100,7 @@ export async function getDashboard() {
     upcomingEvents,
     recentActivity,
     modules: {
-      orders,
+      orders: await hydrateOrderContext(orders),
       poolEntries,
       parking,
       cleaning

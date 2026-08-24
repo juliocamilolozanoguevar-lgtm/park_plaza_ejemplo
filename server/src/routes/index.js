@@ -21,6 +21,9 @@ import { supplyRequestRoutes } from "./supply-request.routes.js";
 import { createBasicRoutes } from "./basic.routes.js";
 import { cashRoutes, invoiceRoutes, parkingRoutes, paymentRoutes, purchaseRoutes, roleRoutes, settingRoutes, supplierRoutes, userRoutes } from "./admin.routes.js";
 import { prisma } from "../config/prisma.js";
+import customerAuthRoutes from "./customer-auth.routes.js";
+import customerServicesRoutes from "./customer-services.routes.js";
+import guestRequestRoutes from "./guest-request.routes.js";
 
 export const apiRoutes = Router();
 
@@ -40,6 +43,12 @@ apiRoutes.use("/dashboard", dashboardRoutes);
 apiRoutes.use("/clients", clientRoutes);
 apiRoutes.use("/clientes", clientRoutes);
 apiRoutes.use("/client", clientPortalRoutes);
+// --- Customer External Auth ---
+apiRoutes.use("/customer", customerAuthRoutes);
+// --- Customer B2C: Service Reservations (Piscina / Mirador) ---
+apiRoutes.use("/customer/service-reservations", customerServicesRoutes);
+// --- Guest Requests (Huesped con Stay activa) ---
+apiRoutes.use("/client/guest-requests", guestRequestRoutes);
 apiRoutes.use("/rooms", roomRoutes);
 apiRoutes.use("/habitaciones", roomRoutes);
 apiRoutes.use("/reservations", reservationRoutes);

@@ -5,13 +5,35 @@ import { emitToStay } from "../socket.js";
 
 const includeOrder = {
   items: { include: { product: { include: { category: true } } } },
-  stay: { include: { client: true, room: true } },
+  stay: { include: { client: true, room: { include: { type: true } } } },
   stockReservation: { include: { items: { include: { product: true } } } }
 };
 
+async function hydrateOrderContext(orders, db = prisma) {
+  const list = Array.isArray(orders) ? orders : [orders];
+  const clientIds = [...new Set(list.map((order) => order.clientId).filter(Boolean))];
+  const roomIds = [...new Set(list.map((order) => order.roomId).filter(Boolean))];
+  const [clients, rooms] = await Promise.all([
+    clientIds.length ? db.client.findMany({ where: { id: { in: clientIds } } }) : [],
+    roomIds.length ? db.room.findMany({ where: { id: { in: roomIds } }, include: { type: true } }) : []
+  ]);
+  const clientMap = new Map(clients.map((client) => [client.id, client]));
+  const roomMap = new Map(rooms.map((room) => [room.id, room]));
+  const hydrated = list.map((order) => ({
+    ...order,
+    client: order.stay?.client || clientMap.get(order.clientId) || null,
+    room: order.stay?.room || roomMap.get(order.roomId) || null
+  }));
+  return Array.isArray(orders) ? hydrated : hydrated[0];
+}
+
 async function attachRecipePlan(order, db = prisma) {
-  const recipePlan = await buildOrderRecipePlan(order, db);
-  return { ...order, recipePlan };
+  try {
+    const recipePlan = await buildOrderRecipePlan(order, db);
+    return { ...order, recipePlan };
+  } catch {
+    return { ...order, recipePlan: { orderId: order.id, area: order.area, requirements: [], missingRecipes: [], issues: [] } };
+  }
 }
 
 export async function listOrders(query = {}, defaultArea) {
@@ -23,13 +45,13 @@ export async function listOrders(query = {}, defaultArea) {
     include: includeOrder,
     orderBy: { createdAt: "desc" }
   });
-  return Promise.all(orders.map(attachRecipePlan));
+  return Promise.all((await hydrateOrderContext(orders)).map(attachRecipePlan));
 }
 
 export async function getOrder(id) {
   const order = await prisma.order.findUnique({ where: { id }, include: includeOrder });
   if (!order) throw notFound("Pedido no encontrado.");
-  return attachRecipePlan(order);
+  return attachRecipePlan(await hydrateOrderContext(order));
 }
 
 export async function updateOrderStatus(id, status, userId) {
@@ -82,7 +104,7 @@ export async function updateOrderStatus(id, status, userId) {
           });
         }
 
-        return attachRecipePlan(updated, tx);
+        return attachRecipePlan(await hydrateOrderContext(updated, tx), tx);
       }, { isolationLevel: (await import('@prisma/client')).Prisma.TransactionIsolationLevel.Serializable });
       
       if (result.stayId) {

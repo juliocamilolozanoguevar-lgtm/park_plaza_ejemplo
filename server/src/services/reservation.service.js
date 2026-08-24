@@ -1,4 +1,5 @@
 import { prisma } from "../config/prisma.js";
+import { createPayment } from "./admin.service.js";
 import { HttpError, notFound } from "../utils/httpError.js";
 
 function asDate(value) {
@@ -9,10 +10,12 @@ function asDate(value) {
   return date;
 }
 
+const PAYMENT_METHODS = new Set(["EFECTIVO", "TARJETA", "YAPE", "PLIN", "TRANSFERENCIA"]);
+
 export async function listReservations(query = {}) {
   return prisma.reservation.findMany({
     where: {
-      status: query.status || undefined,
+      status: query.status || { notIn: ["CANCELADA", "NO_SHOW"] },
       client: query.search
         ? {
             OR: [
@@ -45,6 +48,11 @@ export async function createReservation(data) {
     throw new HttpError(422, "La fecha de salida debe ser mayor a la fecha de entrada.");
   }
 
+  const room = await prisma.room.findUnique({ where: { id: Number(data.roomId) } });
+  if (!room || room.status !== "LIBRE") {
+    throw new HttpError(409, "La habitacion no esta disponible para reservar.");
+  }
+
   const overlapping = await prisma.reservation.findFirst({
     where: {
       roomId: data.roomId,
@@ -71,6 +79,11 @@ export async function createReservation(data) {
   const code = `RSV-${year}-${String(count + 1).padStart(4, "0")}`;
 
   return prisma.$transaction(async (tx) => {
+    const currentRoom = await tx.room.findUnique({ where: { id: Number(data.roomId) } });
+    if (!currentRoom || currentRoom.status !== "LIBRE") {
+      throw new HttpError(409, "La habitacion no esta disponible para reservar.");
+    }
+
     const reservation = await tx.reservation.create({
       data: {
         code,
@@ -132,18 +145,95 @@ export async function createReservation(data) {
 }
 
 export async function updateReservation(id, data) {
-  await getReservation(id);
+  const current = await getReservation(id);
   const { paymentMethod, ...reservationData } = data;
-  return prisma.reservation.update({
-    where: { id },
-    data: reservationData,
-    include: { client: true, room: true }
+  const nextRoomId = Number(reservationData.roomId || current.roomId);
+  const nextCheckInDate = reservationData.checkInDate ? asDate(reservationData.checkInDate) : current.checkInDate;
+  const nextCheckOutDate = reservationData.checkOutDate ? asDate(reservationData.checkOutDate) : current.checkOutDate;
+
+  if (nextCheckOutDate <= nextCheckInDate) {
+    throw new HttpError(422, "La fecha de salida debe ser mayor a la fecha de entrada.");
+  }
+
+  const conflict = await prisma.reservation.findFirst({
+    where: {
+      id: { not: id },
+      roomId: nextRoomId,
+      status: { in: ["PENDIENTE", "CONFIRMADA", "CHECKED_IN"] },
+      checkInDate: { lt: nextCheckOutDate },
+      checkOutDate: { gt: nextCheckInDate }
+    }
+  });
+  if (conflict) throw new HttpError(409, "La habitacion ya tiene una reserva en ese rango de fechas.");
+
+  return prisma.$transaction(async (tx) => {
+    if (nextRoomId !== current.roomId) {
+      const nextRoom = await tx.room.findUnique({ where: { id: nextRoomId } });
+      if (!nextRoom || nextRoom.status !== "LIBRE") throw new HttpError(409, "La habitacion no esta disponible para reservar.");
+    }
+
+    const updated = await tx.reservation.update({
+      where: { id },
+      data: {
+        ...reservationData,
+        roomId: nextRoomId,
+        checkInDate: nextCheckInDate,
+        checkOutDate: nextCheckOutDate
+      },
+      include: { client: true, room: true }
+    });
+
+    if (nextRoomId !== current.roomId) {
+      const activeForOldRoom = await tx.reservation.count({
+        where: {
+          roomId: current.roomId,
+          id: { not: id },
+          status: { in: ["PENDIENTE", "CONFIRMADA", "CHECKED_IN"] }
+        }
+      });
+      if (activeForOldRoom === 0) await tx.room.update({ where: { id: current.roomId }, data: { status: "LIBRE" } });
+      await tx.room.update({ where: { id: nextRoomId }, data: { status: "RESERVADA" } });
+    }
+
+    return updated;
   });
 }
 
 export async function cancelReservation(id) {
   const reservation = await getReservation(id);
   return prisma.$transaction(async (tx) => {
+    const servicePayments = await tx.payment.count({
+      where: { serviceReservation: { reservationId: id } }
+    });
+    const hasPayments = reservation.payments.length > 0 || servicePayments > 0;
+
+    if (!hasPayments && !reservation.stay) {
+      const serviceReservations = await tx.serviceReservation.findMany({
+        where: { reservationId: id },
+        select: { id: true }
+      });
+      const serviceReservationIds = serviceReservations.map((item) => item.id);
+
+      if (serviceReservationIds.length) {
+        await tx.serviceReservationExtra.deleteMany({ where: { serviceReservationId: { in: serviceReservationIds } } });
+        await tx.poolEntry.deleteMany({ where: { serviceReservationId: { in: serviceReservationIds } } });
+        await tx.serviceReservation.deleteMany({ where: { id: { in: serviceReservationIds } } });
+      }
+      await tx.poolEntry.deleteMany({ where: { reservationId: id } });
+      await tx.reservation.delete({ where: { id } });
+
+      const activeForRoom = await tx.reservation.count({
+        where: {
+          roomId: reservation.roomId,
+          status: { in: ["PENDIENTE", "CONFIRMADA", "CHECKED_IN"] }
+        }
+      });
+      if (activeForRoom === 0) {
+        await tx.room.update({ where: { id: reservation.roomId }, data: { status: "LIBRE" } });
+      }
+      return { ...reservation, deleted: true };
+    }
+
     const updated = await tx.reservation.update({
       where: { id },
       data: { status: "CANCELADA" }
@@ -160,4 +250,31 @@ export async function cancelReservation(id) {
     }
     return updated;
   });
+}
+
+export async function confirmReservationPayment(id, data = {}, userId) {
+  const reservation = await getReservation(id);
+  const amount = Number(reservation.balance || 0);
+  const method = String(data.method || "EFECTIVO").toUpperCase();
+  if (!PAYMENT_METHODS.has(method)) throw new HttpError(422, "Metodo de pago no valido.");
+  if (amount <= 0) throw new HttpError(422, "La reserva no tiene saldo pendiente.");
+  if (["CANCELADA", "NO_SHOW", "COMPLETADA"].includes(reservation.status)) {
+    throw new HttpError(422, "No se puede confirmar pago para esta reserva.");
+  }
+
+  await createPayment({
+    clientId: reservation.clientId,
+    reservationId: reservation.id,
+    area: "RECEPCION",
+    concept: `Pago reserva ${reservation.code}`,
+    method,
+    reference: data.reference || null,
+    amount
+  }, userId);
+
+  return getReservation(id);
+}
+
+export async function confirmReservationCashPayment(id, userId) {
+  return confirmReservationPayment(id, { method: "EFECTIVO" }, userId);
 }

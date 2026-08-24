@@ -10,13 +10,44 @@ function generateOrderCode() {
   return `PED-${year}-${randomUUID().slice(0, 6).toUpperCase()}`;
 }
 
+function formatClientDTO(client) {
+  if (!client) return null;
+  return {
+    id: client.id,
+    firstName: client.firstName,
+    lastName: client.lastName,
+    documentNumber: client.documentNumber
+  };
+}
+
+function formatRoomDTO(room) {
+  if (!room) return null;
+  return {
+    id: room.id,
+    number: room.number,
+    type: room.type ? { id: room.type.id, name: room.type.name } : undefined
+  };
+}
+
+function noteLine(notes, prefix) {
+  return String(notes || "").split("\n").find((line) => line.startsWith(prefix))?.slice(prefix.length).trim() || null;
+}
+
 function formatOrderDTO(order) {
+  const room = order.room || order.stay?.room || null;
+  const client = order.client || order.stay?.client || null;
   return {
     id: order.id,
     code: order.code,
     area: order.area,
     status: order.status,
     total: Number(order.total),
+    notes: order.notes,
+    destinationLabel: order.destinationLabel || noteLine(order.notes, "Destino:"),
+    roomId: order.roomId || order.stay?.roomId || room?.id || null,
+    stayId: order.stayId || null,
+    room: formatRoomDTO(room),
+    client: formatClientDTO(client),
     createdAt: order.createdAt,
     updatedAt: order.updatedAt,
     items: order.items.map(item => ({
@@ -25,6 +56,49 @@ function formatOrderDTO(order) {
       quantity: item.quantity,
       price: Number(item.price)
     }))
+  };
+}
+
+async function hydrateOrderContext(orders, db = prisma) {
+  const list = Array.isArray(orders) ? orders : [orders];
+  const clientIds = [...new Set(list.map((order) => order.clientId).filter(Boolean))];
+  const roomIds = [...new Set(list.map((order) => order.roomId).filter(Boolean))];
+  const [clients, rooms] = await Promise.all([
+    clientIds.length ? db.client.findMany({ where: { id: { in: clientIds } } }) : [],
+    roomIds.length ? db.room.findMany({ where: { id: { in: roomIds } }, include: { type: true } }) : []
+  ]);
+  const clientMap = new Map(clients.map((client) => [client.id, client]));
+  const roomMap = new Map(rooms.map((room) => [room.id, room]));
+  const hydrated = list.map((order) => ({
+    ...order,
+    client: order.stay?.client || clientMap.get(order.clientId) || null,
+    room: order.stay?.room || roomMap.get(order.roomId) || null
+  }));
+  return Array.isArray(orders) ? hydrated : hydrated[0];
+}
+
+function buildOrderNotes(notes, contextLines) {
+  return [...contextLines, notes?.trim() ? `Indicaciones: ${notes.trim()}` : null].filter(Boolean).join("\n") || null;
+}
+
+const SALES_NAMES = [
+  { keys: ["ACEITE"], name: "Lomo saltado de la casa", category: "Fondos - Cocina" },
+  { keys: ["ARROZ"], name: "Arroz chaufa amazónico", category: "Fondos - Cocina" },
+  { keys: ["AZUCAR"], name: "Refresco natural de camu camu", category: "Bebidas - Cocina" },
+  { keys: ["FIDEOS", "TALLARIN"], name: "Tallarines saltados", category: "Fondos - Cocina" },
+  { keys: ["LECHUGA"], name: "Ensalada fresca Park Plaza", category: "Entradas - Cocina" },
+  { keys: ["PIMIENTA"], name: "Pollo grillado con guarnición", category: "Fondos - Cocina" },
+  { keys: ["PESCADO"], name: "Ceviche regional", category: "Entradas - Cocina" },
+  { keys: ["LIMON"], name: "Limonada frozen", category: "Bebidas - Bar" },
+  { keys: ["PISCO"], name: "Pisco sour clásico", category: "Cocteles - Bar" },
+  { keys: ["GINEBRA", "GIN"], name: "Gin tonic amazónico", category: "Cocteles - Bar" }
+];
+
+function salesPresentation(product) {
+  const text = String(`${product?.name || ""} ${product?.category?.name || ""}`).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+  return SALES_NAMES.find((entry) => entry.keys.some((key) => text.includes(key))) || {
+    name: product.name,
+    category: product.category.name
   };
 }
 
@@ -146,6 +220,64 @@ export async function createClientOrder(clientId, stayId, roomId, data) {
   return await prisma.$transaction(async (tx) => {
     let total = 0;
     const orderItemsToCreate = [];
+    let orderStayId = stayId ? Number(stayId) : null;
+    let orderRoomId = roomId ? Number(roomId) : null;
+    const contextLines = [];
+
+    if (data?.reservationId) {
+      const reservation = await tx.reservation.findFirst({
+        where: {
+          id: Number(data.reservationId),
+          clientId: Number(clientId),
+          status: { notIn: ["CANCELADA", "COMPLETADA", "NO_SHOW"] }
+        },
+        include: { room: { include: { type: true } }, stay: true }
+      });
+      if (!reservation) throw new HttpError(422, "La reserva seleccionada no está disponible para pedidos.");
+      orderRoomId = reservation.roomId;
+      orderStayId = reservation.stay?.id || orderStayId;
+      contextLines.push(`Reserva: ${reservation.code}`);
+      contextLines.push(`Destino: Habitación ${reservation.room?.number || reservation.roomId}`);
+    }
+
+    if (data?.serviceReservationId) {
+      const serviceReservation = await tx.serviceReservation.findFirst({
+        where: {
+          id: Number(data.serviceReservationId),
+          clientId: Number(clientId),
+          status: { notIn: ["CANCELADA", "FINALIZADA"] }
+        },
+        include: {
+          reservation: { include: { room: { include: { type: true } } } },
+          stay: { include: { room: { include: { type: true } } } }
+        }
+      });
+      if (!serviceReservation) throw new HttpError(422, "El servicio seleccionado no está disponible para pedidos.");
+      orderRoomId = serviceReservation.stay?.roomId || serviceReservation.reservation?.roomId || orderRoomId;
+      orderStayId = serviceReservation.stayId || orderStayId;
+      contextLines.push(`Reserva: ${serviceReservation.code}`);
+      contextLines.push(`Servicio: ${serviceReservation.serviceType}`);
+      contextLines.push(`Destino: ${data.destinationLabel || serviceReservation.serviceType}`);
+    }
+
+    if (data?.eventId) {
+      const event = await tx.event.findFirst({
+        where: {
+          id: Number(data.eventId),
+          clientId: Number(clientId),
+          status: { notIn: ["CANCELADO", "FINALIZADO"] }
+        },
+        include: { space: true }
+      });
+      if (!event) throw new HttpError(422, "El evento seleccionado no está disponible para pedidos.");
+      contextLines.push(`Reserva: EVT-${event.id}`);
+      contextLines.push(`Destino: Evento ${event.name}`);
+      contextLines.push(`Ambiente: ${event.space?.name || "Por confirmar"}`);
+    }
+
+    if (!contextLines.some((line) => line.startsWith("Destino:")) && data?.destinationLabel) {
+      contextLines.push(`Destino: ${data.destinationLabel}`);
+    }
 
     for (const item of items) {
       if (!item.productId || !item.quantity || item.quantity <= 0) {
@@ -166,8 +298,8 @@ export async function createClientOrder(clientId, stayId, roomId, data) {
 
       orderItemsToCreate.push({
         productId: product.id,
-        name: product.name,
-        category: product.category.name,
+        name: salesPresentation(product).name,
+        category: salesPresentation(product).category,
         price: product.price,
         quantity: item.quantity
       });
@@ -178,43 +310,82 @@ export async function createClientOrder(clientId, stayId, roomId, data) {
         code: generateOrderCode(),
         area: area,
         clientId: clientId,
-        roomId: roomId,
-        stayId: stayId,
+        roomId: orderRoomId,
+        stayId: orderStayId,
         status: "PENDIENTE",
         total: total,
-        notes: notes || null,
+        notes: buildOrderNotes(notes, contextLines),
         items: {
           create: orderItemsToCreate
         }
       },
       include: {
-        items: true
+        items: true,
+        stay: { include: { client: true, room: { include: { type: true } } } }
       }
     });
 
-    return formatOrderDTO(order);
+    return formatOrderDTO(await hydrateOrderContext(order, tx));
   });
+}
+
+export async function createCustomerOrder(clientId, data) {
+  const clientIdNumber = Number(clientId);
+  const [reservation, serviceReservation, event] = await Promise.all([
+    prisma.reservation.findFirst({
+      where: {
+        clientId: clientIdNumber,
+        status: { notIn: ["CANCELADA", "COMPLETADA", "NO_SHOW"] }
+      },
+      orderBy: { updatedAt: 'desc' }
+    }),
+    prisma.serviceReservation.findFirst({
+      where: {
+        clientId: clientIdNumber,
+        status: { notIn: ["CANCELADA", "FINALIZADA"] }
+      },
+      orderBy: { updatedAt: 'desc' }
+    }),
+    prisma.event.findFirst({
+      where: {
+        clientId: clientIdNumber,
+        status: { notIn: ["CANCELADO", "FINALIZADO"] }
+      },
+      orderBy: { startsAt: 'desc' }
+    })
+  ]);
+  if (!reservation && !serviceReservation && !event) throw new HttpError(403, "Primero registra una reserva para poder realizar pedidos.");
+  return createClientOrder(clientIdNumber, null, null, data);
 }
 
 export async function getClientOrders(stayId) {
   const orders = await prisma.order.findMany({
     where: { stayId },
-    include: { items: true },
+    include: { items: true, stay: { include: { client: true, room: { include: { type: true } } } } },
     orderBy: { createdAt: 'desc' }
   });
-  return orders.map(formatOrderDTO);
+  return (await hydrateOrderContext(orders)).map(formatOrderDTO);
+}
+
+export async function getCustomerOrders(clientId) {
+  const orders = await prisma.order.findMany({
+    where: { clientId: Number(clientId), stayId: null },
+    include: { items: true, stay: { include: { client: true, room: { include: { type: true } } } } },
+    orderBy: { createdAt: 'desc' }
+  });
+  return (await hydrateOrderContext(orders)).map(formatOrderDTO);
 }
 
 export async function getClientOrderById(clientId, stayId, orderId) {
   const order = await prisma.order.findUnique({
     where: { id: orderId },
-    include: { items: true }
+    include: { items: true, stay: { include: { client: true, room: { include: { type: true } } } } }
   });
 
   if (!order) throw notFound("Pedido no encontrado.");
   if (order.stayId !== stayId) throw new HttpError(403, "No tienes permiso para ver este pedido.");
 
-  return formatOrderDTO(order);
+  return formatOrderDTO(await hydrateOrderContext(order));
 }
 
 export async function getClientConsumptions(stayId) {

@@ -9,6 +9,7 @@ import { apiRoutes } from "./routes/index.js";
 import { errorHandler } from "./middlewares/errorHandler.js";
 import { createServer } from "node:http";
 import { initializeSocket } from "./socket.js";
+import { ensureDefaultServiceCatalog } from "./services/service-reservation.service.js";
 
 const app = express();
 const httpServer = createServer(app);
@@ -36,6 +37,7 @@ httpServer.listen(env.port, async () => {
   console.log(`Hotel Park Plaza API running on http://localhost:${env.port}`);
   try {
     await prisma.$queryRaw`SELECT 1`;
+    await ensureDefaultServiceCatalog();
     console.log("PostgreSQL conectado correctamente.");
   } catch (error) {
     console.error("No fue posible conectar con PostgreSQL. Verifique DATABASE_URL y que PostgreSQL este ejecutandose.");

@@ -9,6 +9,40 @@ const OCCUPYING_STATUSES = ["PENDIENTE", "CONFIRMADA", "EN_USO"];
 const AVAILABILITY_WINDOW_DAYS = 21;
 const PAYMENT_METHODS = new Set(Object.values(PaymentMethod));
 
+const DEFAULT_SERVICE_CATALOG = {
+  PISCINA: {
+    slots: [["09:00", "12:00", 60], ["14:00", "17:00", 60]],
+    plans: [
+      ["ADULTO", "Adulto", "Acceso general para adulto.", 25, "ADULTO"],
+      ["NINO", "Niño", "Acceso para menor de edad.", 15, "NINO"],
+      ["FAMILIAR", "Familiar", "Pase familiar para 4 personas.", 70, "FAMILIAR"]
+    ],
+    extras: [["TOALLA", "Toalla premium", "Toalla para uso en piscina.", 8]]
+  },
+  MIRADOR: {
+    slots: [["16:30", "18:30", 40], ["19:00", "21:00", 40]],
+    plans: [["GENERAL", "Acceso mirador", "Reserva de mesa y acceso al mirador.", 20, "PERSONA"]],
+    extras: [["DECORACION", "Decoración simple", "Detalle decorativo para la mesa.", 25]]
+  }
+};
+
+export async function ensureDefaultServiceCatalog() {
+  for (const [serviceType, config] of Object.entries(DEFAULT_SERVICE_CATALOG)) {
+    for (const [startTime, endTime, capacity] of config.slots) {
+      const existing = await prisma.serviceSlot.findFirst({ where: { serviceType, startTime, endTime } });
+      if (!existing) await prisma.serviceSlot.create({ data: { serviceType, startTime, endTime, capacity, active: true } });
+    }
+    for (const [code, name, description, price, pricingMode] of config.plans) {
+      const existing = await prisma.servicePlan.findFirst({ where: { serviceType, code } });
+      if (!existing) await prisma.servicePlan.create({ data: { serviceType, code, name, description, price, pricingMode, active: true } });
+    }
+    for (const [name, description, price] of config.extras) {
+      const existing = await prisma.serviceExtra.findFirst({ where: { serviceType, name } });
+      if (!existing) await prisma.serviceExtra.create({ data: { serviceType, name, description, price, active: true } });
+    }
+  }
+}
+
 function toMoney(value) {
   return new Prisma.Decimal(value || 0).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
 }
@@ -380,6 +414,19 @@ export async function getClientServiceReservations(clientId, stayId) {
     orderBy: [{ date: "desc" }, { createdAt: "desc" }]
   });
   return reservations.map(formatServiceReservationDTO);
+}
+
+export async function listServiceReservations() {
+  return prisma.serviceReservation.findMany({
+    include: {
+      client: true,
+      slot: true,
+      plan: true,
+      extras: { include: { serviceExtra: true } }
+    },
+    orderBy: [{ date: "desc" }, { createdAt: "desc" }],
+    take: 200
+  });
 }
 
 export async function getClientServiceReservationById(clientId, stayId, id) {

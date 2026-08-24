@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { BedDouble, CalendarCheck, CreditCard, Eye, LogIn, LogOut, Users } from "lucide-react";
+import { BedDouble, CalendarCheck, CreditCard, Eye, LogIn, LogOut, ShoppingBag, Users } from "lucide-react";
 import { LoadingSpinner } from "../../components/LoadingSpinner";
 import { MetricCard } from "../../components/MetricCard";
 import { StatusBadge } from "../../components/StatusBadge";
@@ -22,6 +22,7 @@ export function ReceptionPage() {
   if (error) return <p className="rounded-card bg-park-danger-soft p-4 font-semibold text-park-danger">{error.message}</p>;
 
   const metrics = data.metrics;
+  const activeOrders = (data.modules?.orders || []).filter((order) => !["ENTREGADO", "CANCELADO"].includes(order.status)).slice(0, 6);
   const arrivals = (reservations || [])
     .filter((reservation) => isToday(reservation.checkInDate) && !reservation.stay)
     .slice(0, 5);
@@ -58,6 +59,46 @@ export function ReceptionPage() {
         {canViewCheckOut ? <ModuleCard title="Check-out" description="Revisa consumos, pagos y libera la habitacion a limpieza." href="/checkout" icon={LogOut} meta="Cierre" /> : null}
         {canCreatePayment ? <ModuleCard title="Registrar pago" description="Consulta movimientos y pagos operativos." href="/pagos" icon={CreditCard} meta="Caja" /> : null}
       </section>
+
+      <article className="rounded-card border border-park-border bg-white shadow-card">
+        <div className="flex items-center justify-between border-b border-park-border px-5 py-4">
+          <div>
+            <h2 className="font-display text-lg font-semibold text-park-dark">Pedidos activos</h2>
+            <p className="text-sm text-park-muted">Pedidos enviados desde la vista del cliente con cliente, habitación y detalle.</p>
+          </div>
+          <ShoppingBag className="text-park-green" size={22} />
+        </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-left text-sm">
+            <thead className="bg-park-bg text-xs uppercase text-park-muted">
+              <tr>
+                {["Pedido", "Cliente", "Habitación", "Detalle", "Área", "Estado"].map((column) => (
+                  <th className="px-5 py-3 font-bold" key={column}>{column}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-park-border">
+              {activeOrders.length ? activeOrders.map((order) => (
+                <tr key={order.id}>
+                  <td className="px-5 py-3 font-semibold text-park-black">{order.code}</td>
+                  <td className="px-5 py-3">
+                    <span className="block font-semibold text-park-black">{clientLabel(order)}</span>
+                    <span className="text-xs text-park-muted">{order.client?.documentNumber || order.stay?.client?.documentNumber || "DNI no registrado"}</span>
+                  </td>
+                  <td className="px-5 py-3 font-semibold">{roomLabel(order)}</td>
+                  <td className="max-w-[260px] truncate px-5 py-3" title={itemsLabel(order)}>{itemsLabel(order)}</td>
+                  <td className="px-5 py-3">{order.area === "BARTENDER" ? "Bar" : "Restaurante"}</td>
+                  <td className="px-5 py-3"><StatusBadge value={order.status} /></td>
+                </tr>
+              )) : (
+                <tr>
+                  <td className="px-5 py-6 text-center text-park-muted" colSpan={6}>No hay pedidos activos por ahora.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </article>
 
       <section className="grid gap-4 xl:grid-cols-[1fr_280px]">
         <article className="rounded-card border border-park-border bg-white shadow-card">
@@ -141,4 +182,24 @@ function nights(reservation) {
   const start = new Date(reservation.checkInDate);
   const end = new Date(reservation.checkOutDate);
   return Math.max(1, Math.round((end - start) / 86400000));
+}
+
+function clientLabel(order) {
+  const client = order.client || order.stay?.client;
+  return [client?.firstName, client?.lastName].filter(Boolean).join(" ").trim() || "Cliente no registrado";
+}
+
+function roomLabel(order) {
+  const room = order.room || order.stay?.room;
+  if (room?.number) return `Hab. ${room.number}`;
+  if (order.roomId) return `Hab. ${order.roomId}`;
+  return order.destinationLabel || destinationFromNotes(order.notes) || "Sin habitación";
+}
+
+function itemsLabel(order) {
+  return order.items?.map((item) => `${item.quantity} x ${item.name}`).join(", ") || "Sin productos";
+}
+
+function destinationFromNotes(notes) {
+  return String(notes || "").split("\n").find((line) => line.startsWith("Destino:"))?.slice(8).trim() || "";
 }

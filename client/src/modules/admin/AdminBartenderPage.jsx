@@ -98,6 +98,7 @@ function OrdersTable({ orders, onSelect }) {
     <AdminTable>
       <AdminTableHead>
         <AdminTableHeaderCell>Pedido</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Cliente</AdminTableHeaderCell>
         <AdminTableHeaderCell>Habitación</AdminTableHeaderCell>
         <AdminTableHeaderCell>Producto</AdminTableHeaderCell>
         <AdminTableHeaderCell>Total</AdminTableHeaderCell>
@@ -109,7 +110,8 @@ function OrdersTable({ orders, onSelect }) {
         {orders.map((order) => (
           <AdminTableRow key={order.id} onClick={() => onSelect(order)}>
             <AdminTableCell className="font-semibold text-park-dark">{order.code}</AdminTableCell>
-            <AdminTableCell>{order.stay?.room?.number || order.roomId || "Piscina"}</AdminTableCell>
+            <AdminTableCell>{clientLabel(order)}</AdminTableCell>
+            <AdminTableCell>{roomLabel(order)}</AdminTableCell>
             <AdminTableCell className="max-w-[200px] truncate" title={itemsLabel(order)}>{itemsLabel(order)}</AdminTableCell>
             <AdminTableCell>S/ {Number(order.total).toFixed(2)}</AdminTableCell>
             <AdminTableCell><StatusBadge value={order.status} /></AdminTableCell>
@@ -160,9 +162,12 @@ function OrderDetail({ order, onClose }) {
           <div><StatusBadge value={order.status} /></div>
           
           <Panel title="Información general" className="mt-0">
-            <DetailRow label="Habitación" value={order.stay?.room?.number || order.roomId || "Piscina"} />
+            <DetailRow label="Cliente" value={clientLabel(order)} />
+            <DetailRow label="Habitación" value={roomLabel(order)} />
             <DetailRow label="Producto" value={itemsLabel(order)} />
             <DetailRow label="Total" value={`S/ ${Number(order.total).toFixed(2)}`} />
+            <DetailRow label="Destino" value={order.destinationLabel || destinationFromNotes(order.notes)} />
+            <DetailRow label="Notas" value={order.notes} />
             <DetailRow label="Recibido" value={formatDateTime(order.createdAt)} />
             <DetailRow label="Actualizado" value={formatDateTime(order.updatedAt)} />
             <DetailRow label="Bartender" value={order.createdBy?.firstName || "No registrado"} />
@@ -219,6 +224,22 @@ function historyFor(order) {
 
 function itemsLabel(order) {
   return order.items?.map((item) => `${item.quantity} x ${item.name}`).join(", ") || "Sin productos";
+}
+
+function clientLabel(order) {
+  const client = order.client || order.stay?.client;
+  return [client?.firstName, client?.lastName].filter(Boolean).join(" ").trim() || "Cliente no registrado";
+}
+
+function roomLabel(order) {
+  const room = order.room || order.stay?.room;
+  if (room?.number) return `Hab. ${room.number}`;
+  if (order.roomId) return `Hab. ${order.roomId}`;
+  return order.destinationLabel || destinationFromNotes(order.notes) || "Sin habitación";
+}
+
+function destinationFromNotes(notes) {
+  return String(notes || "").split("\n").find((line) => line.startsWith("Destino:"))?.slice(8).trim() || "";
 }
 
 function pageTitle(view) {

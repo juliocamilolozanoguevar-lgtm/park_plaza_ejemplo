@@ -1,31 +1,38 @@
 import express from 'express';
-import * as serviceReservationController from '../controllers/service-reservation.controller.js';
 import { authenticateCustomer } from '../middlewares/customer-auth.js';
+import {
+  createReservation,
+  listReservations,
+  getReservationDetails,
+  cancelReservation,
+  addPayment,
+  menu,
+  createOrder,
+  listOrders,
+} from '../controllers/customer-services.controller.js';
 
 const router = express.Router();
 
-// Note: authenticateCustomer ensures req.client has scope CUSTOMER and a valid clientId (no stayId)
+// Todas las rutas exigen JWT con scope=CUSTOMER
 router.use(authenticateCustomer);
 
-// Middleware to inject stayId = null, reservationId = null, and enforce clientId
-const injectExternalCustomer = (req, res, next) => {
-  req.body.clientId = req.client.clientId;
-  req.body.stayId = null;
-  req.body.reservationId = null;
-  
-  // For GET requests, we force the query to filter by clientId and stayId=null
-  req.query.clientId = req.client.clientId;
-  req.query.stayId = 'null';
-  
-  next();
-};
+// Crear reserva de servicio (PISCINA o MIRADOR)
+router.post('/', createReservation);
 
-router.use(injectExternalCustomer);
+// Listar reservas propias
+router.get('/', listReservations);
 
-// Reusing existing controllers
-router.post('/', serviceReservationController.createReservation);
-router.get('/', serviceReservationController.listReservations);
-router.get('/:id', serviceReservationController.getReservationDetails);
-router.post('/:id/payments', serviceReservationController.addPayment);
+router.get('/menu/:area', menu);
+router.post('/orders', createOrder);
+router.get('/orders', listOrders);
+
+// Detalle de reserva propia
+router.get('/:id', getReservationDetails);
+
+// Cancelar reserva propia
+router.patch('/:id/cancel', cancelReservation);
+
+// Registrar pago de reserva propia
+router.post('/:id/payments', addPayment);
 
 export default router;

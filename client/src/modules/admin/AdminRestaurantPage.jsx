@@ -254,6 +254,7 @@ function OrdersTable({ orders, onSelect }) {
     <AdminTable>
       <AdminTableHead>
         <AdminTableHeaderCell>Pedido</AdminTableHeaderCell>
+        <AdminTableHeaderCell>Cliente</AdminTableHeaderCell>
         <AdminTableHeaderCell>Habitación</AdminTableHeaderCell>
         <AdminTableHeaderCell>Producto</AdminTableHeaderCell>
         <AdminTableHeaderCell>Total</AdminTableHeaderCell>
@@ -265,7 +266,8 @@ function OrdersTable({ orders, onSelect }) {
         {orders.map((order) => (
           <AdminTableRow key={order.id} onClick={() => onSelect(order)}>
             <AdminTableCell className="font-semibold text-park-dark">{order.code}</AdminTableCell>
-            <AdminTableCell>{order.stay?.room?.number || order.roomId || "Piscina"}</AdminTableCell>
+            <AdminTableCell>{clientLabel(order)}</AdminTableCell>
+            <AdminTableCell>{roomLabel(order)}</AdminTableCell>
             <AdminTableCell className="max-w-[200px] truncate" title={itemsLabel(order)}>{itemsLabel(order)}</AdminTableCell>
             <AdminTableCell>S/ {Number(order.total).toFixed(2)}</AdminTableCell>
             <AdminTableCell><StatusBadge value={order.status} /></AdminTableCell>
@@ -322,10 +324,12 @@ function OrderDetail({ order, onClose }) {
           <div><StatusBadge value={order.status} /></div>
           
           <Panel title="Información general" className="mt-0">
-            <DetailRow label="Habitación" value={order.stay?.room?.number || order.roomId || "Piscina"} />
+            <DetailRow label="Cliente" value={clientLabel(order)} />
+            <DetailRow label="Habitación" value={roomLabel(order)} />
             <DetailRow label="Producto" value={itemsLabel(order)} />
             <DetailRow label="Cantidad" value={quantityLabel(order)} />
             <DetailRow label="Total" value={`S/ ${Number(order.total).toFixed(2)}`} />
+            <DetailRow label="Destino" value={order.destinationLabel || destinationFromNotes(order.notes)} />
             <DetailRow label="Responsable" value={responsibleLabel(order)} />
             <DetailRow label="Pedido" value={formatDateTime(order.createdAt)} />
             <DetailRow label="Actualizado" value={formatDateTime(order.updatedAt)} />
@@ -398,7 +402,7 @@ function filterOrders(orders, status, search) {
   const term = search.trim().toLowerCase();
   return orders.filter((order) => {
     const matchesStatus = status === "TODOS" || order.status === status;
-    const haystack = [order.code, order.stay?.room?.number, order.roomId, itemsLabel(order), responsibleLabel(order)].filter(Boolean).join(" ").toLowerCase();
+    const haystack = [order.code, roomLabel(order), clientLabel(order), order.client?.documentNumber, order.stay?.client?.documentNumber, itemsLabel(order), responsibleLabel(order)].filter(Boolean).join(" ").toLowerCase();
     return matchesStatus && (!term || haystack.includes(term));
   });
 }
@@ -419,7 +423,7 @@ function statusByView(view) {
 }
 
 function orderStatusTabs() {
-  return ["TODOS", "PENDIENTE", "EN_COCINA", "PREPARANDO", "LISTO", "ENTREGADO"].map((item) => ({ value: item, label: item === "TODOS" ? "Todos" : item.replaceAll("_", " ") }));
+  return ["TODOS", "PENDIENTE", "PREPARANDO", "LISTO", "ENTREGADO"].map((item) => ({ value: item, label: statusLabel(item) }));
 }
 
 function Select({ label, value, onChange, options }) {
@@ -435,15 +439,35 @@ function Select({ label, value, onChange, options }) {
 
 function historyFor(order) {
   const steps = ["Pedido recibido"];
-  if (["EN_COCINA", "PREPARANDO", "LISTO", "ENTREGADO"].includes(order.status)) steps.push("En cocina");
-  if (["PREPARANDO", "LISTO", "ENTREGADO"].includes(order.status)) steps.push("Inicio preparación");
-  if (["LISTO", "ENTREGADO"].includes(order.status)) steps.push("Listo");
+  if (["EN_COCINA", "PREPARANDO", "LISTO", "ENTREGADO"].includes(order.status)) steps.push("Pedido aceptado");
+  if (["PREPARANDO", "LISTO", "ENTREGADO"].includes(order.status)) steps.push("En preparación");
+  if (["LISTO", "ENTREGADO"].includes(order.status)) steps.push("Pedido listo");
   if (order.status === "ENTREGADO") steps.push("Entregado");
   return steps;
 }
 
+function statusLabel(status) {
+  return ({ TODOS: "Todos", PENDIENTE: "Recibido", EN_COCINA: "En preparación", PREPARANDO: "En preparación", LISTO: "Listo", ENTREGADO: "Entregado" })[status] || status.replaceAll("_", " ");
+}
+
 function itemsLabel(order) {
   return order.items?.map((item) => item.name).join(", ") || "Sin productos";
+}
+
+function clientLabel(order) {
+  const client = order.client || order.stay?.client;
+  return [client?.firstName, client?.lastName].filter(Boolean).join(" ").trim() || "Cliente no registrado";
+}
+
+function roomLabel(order) {
+  const room = order.room || order.stay?.room;
+  if (room?.number) return `Hab. ${room.number}`;
+  if (order.roomId) return `Hab. ${order.roomId}`;
+  return order.destinationLabel || destinationFromNotes(order.notes) || "Sin habitación";
+}
+
+function destinationFromNotes(notes) {
+  return String(notes || "").split("\n").find((line) => line.startsWith("Destino:"))?.slice(8).trim() || "";
 }
 
 function quantityLabel(order) {
