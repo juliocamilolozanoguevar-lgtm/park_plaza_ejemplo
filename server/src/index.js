@@ -7,8 +7,14 @@ import { env } from "./config/env.js";
 import { prisma } from "./config/prisma.js";
 import { apiRoutes } from "./routes/index.js";
 import { errorHandler } from "./middlewares/errorHandler.js";
+import { createServer } from "node:http";
+import { initializeSocket } from "./socket.js";
 
 const app = express();
+const httpServer = createServer(app);
+
+// Inicializar Socket.IO
+initializeSocket(httpServer);
 
 app.use(helmet());
 app.use(cors({
@@ -26,7 +32,7 @@ app.use("/api", apiRoutes);
 app.use((req, res) => res.status(404).json({ message: "Ruta no encontrada." }));
 app.use(errorHandler);
 
-app.listen(env.port, async () => {
+httpServer.listen(env.port, async () => {
   console.log(`Hotel Park Plaza API running on http://localhost:${env.port}`);
   try {
     await prisma.$queryRaw`SELECT 1`;

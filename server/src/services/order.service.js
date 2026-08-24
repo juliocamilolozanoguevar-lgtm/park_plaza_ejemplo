@@ -1,6 +1,7 @@
 import { prisma } from "../config/prisma.js";
 import { HttpError, notFound } from "../utils/httpError.js";
 import { buildOrderRecipePlan, consumeOrderReservation, releaseOrderReservation, reserveOrderStock } from "./recipe.service.js";
+import { emitToStay } from "../socket.js";
 
 const includeOrder = {
   items: { include: { product: { include: { category: true } } } },
@@ -46,7 +47,7 @@ export async function updateOrderStatus(id, status, userId) {
   const maxAttempts = 10;
   while (attempts < maxAttempts) {
     try {
-      return await prisma.$transaction(async (tx) => {
+      const result = await prisma.$transaction(async (tx) => {
         if (status === "PREPARANDO" && order.status !== "PREPARANDO") {
           await reserveOrderStock(id, userId, tx);
         }
@@ -83,6 +84,16 @@ export async function updateOrderStatus(id, status, userId) {
 
         return attachRecipePlan(updated, tx);
       }, { isolationLevel: (await import('@prisma/client')).Prisma.TransactionIsolationLevel.Serializable });
+      
+      if (result.stayId) {
+        emitToStay(result.stayId, "order:status_updated", {
+          orderId: result.id,
+          code: result.code,
+          status: result.status
+        });
+      }
+      
+      return result;
     } catch (e) {
       if (e.code === "P2034" || (e.message && e.message.includes("40001"))) {
         attempts++;
