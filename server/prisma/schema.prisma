@@ -259,114 +259,114 @@ model RolePermission {
 }
 
 model User {
-  id              Int              @id @default(autoincrement())
-  firstName       String
-  lastName        String
-  email           String           @unique
-  documentNumber  String?          @unique
-  phone           String?
-  birthDate       DateTime?
-  photoUrl        String?
-  position        String?
-  hireDate        DateTime?
-  username        String?          @unique
-  passwordHash    String
-  status          UserStatus       @default(ACTIVO)
-  roleId          Int
-  role            Role             @relation(fields: [roleId], references: [id])
-  auditLogs       AuditLog[]
-  poolReports     PoolReport[]
-  cleaningReports CleaningReport[]
-  cleaningEvidence CleaningEvidence[]
-  finishedCleaningTasks CleaningTask[] @relation("CleaningTaskFinishedBy")
-  reportedOperationalReports OperationalReport[] @relation("OperationalReportReportedBy")
-  resolvedOperationalReports OperationalReport[] @relation("OperationalReportResolvedBy")
-  assignedOperationalReports OperationalReport[] @relation("OperationalReportAssignedTo")
-  attendanceRecords AttendanceRecord[] @relation("AttendanceWorker")
-  correctedAttendanceRecords AttendanceRecord[] @relation("AttendanceCorrectedBy")
-  inventoryMovements InventoryMovement[]
-  createdInventoryInspections InventoryInspection[] @relation("InventoryInspectionCreatedBy")
+  id                           Int                   @id @default(autoincrement())
+  firstName                    String
+  lastName                     String
+  email                        String                @unique
+  documentNumber               String?               @unique
+  phone                        String?
+  birthDate                    DateTime?
+  photoUrl                     String?
+  position                     String?
+  hireDate                     DateTime?
+  username                     String?               @unique
+  passwordHash                 String
+  status                       UserStatus            @default(ACTIVO)
+  roleId                       Int
+  role                         Role                  @relation(fields: [roleId], references: [id])
+  auditLogs                    AuditLog[]
+  poolReports                  PoolReport[]
+  cleaningReports              CleaningReport[]
+  cleaningEvidence             CleaningEvidence[]
+  finishedCleaningTasks        CleaningTask[]        @relation("CleaningTaskFinishedBy")
+  reportedOperationalReports   OperationalReport[]   @relation("OperationalReportReportedBy")
+  resolvedOperationalReports   OperationalReport[]   @relation("OperationalReportResolvedBy")
+  assignedOperationalReports   OperationalReport[]   @relation("OperationalReportAssignedTo")
+  attendanceRecords            AttendanceRecord[]    @relation("AttendanceWorker")
+  correctedAttendanceRecords   AttendanceRecord[]    @relation("AttendanceCorrectedBy")
+  inventoryMovements           InventoryMovement[]
+  createdInventoryInspections  InventoryInspection[] @relation("InventoryInspectionCreatedBy")
   resolvedInventoryInspections InventoryInspection[] @relation("InventoryInspectionResolvedBy")
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
+  createdAt                    DateTime              @default(now())
+  updatedAt                    DateTime              @updatedAt
 }
 
 model AttendanceRecord {
-  id              Int              @id @default(autoincrement())
-  userId          Int
-  user            User             @relation("AttendanceWorker", fields: [userId], references: [id])
-  checkInAt       DateTime
-  checkOutAt      DateTime?
-  durationMinutes Int?
-  status          AttendanceStatus @default(PRESENTE)
-  reviewReason    String?
-  correctedById   Int?
-  correctedBy     User?            @relation("AttendanceCorrectedBy", fields: [correctedById], references: [id])
+  id               Int              @id @default(autoincrement())
+  userId           Int
+  user             User             @relation("AttendanceWorker", fields: [userId], references: [id])
+  checkInAt        DateTime
+  checkOutAt       DateTime?
+  durationMinutes  Int?
+  status           AttendanceStatus @default(PRESENTE)
+  reviewReason     String?
+  correctedById    Int?
+  correctedBy      User?            @relation("AttendanceCorrectedBy", fields: [correctedById], references: [id])
   correctionReason String?
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
 
   @@index([userId, checkInAt])
   @@index([status])
 }
 
 model Client {
-  id             Int            @id @default(autoincrement())
-  documentType   String
-  documentNumber String         @unique
-  firstName      String
-  lastName       String
-  phone          String?
-  email          String?
-  address        String?
-  birthDate      DateTime?
-  registeredAt   DateTime       @default(now())
-  status         ClientStatus   @default(ACTIVO)
-  reservations   Reservation[]
-  stays          Stay[]
-  consumptions   Consumption[]
-  payments       Payment[]
-  invoices       Invoice[]
-  poolEntries    PoolEntry[]
-  poolReports    PoolReport[]
+  id                  Int                  @id @default(autoincrement())
+  documentType        String
+  documentNumber      String               @unique
+  firstName           String
+  lastName            String
+  phone               String?
+  email               String?
+  address             String?
+  birthDate           DateTime?
+  registeredAt        DateTime             @default(now())
+  status              ClientStatus         @default(ACTIVO)
+  reservations        Reservation[]
+  stays               Stay[]
+  consumptions        Consumption[]
+  payments            Payment[]
+  invoices            Invoice[]
+  poolEntries         PoolEntry[]
+  poolReports         PoolReport[]
   serviceReservations ServiceReservation[]
-  events         Event[]
-  vehicleEntries VehicleEntry[]
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  events              Event[]
+  vehicleEntries      VehicleEntry[]
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
 
   @@index([firstName, lastName])
   @@index([documentNumber])
 }
 
 model RoomType {
-  id          Int      @id @default(autoincrement())
-  name        String   @unique
+  id          Int     @id @default(autoincrement())
+  name        String  @unique
   description String?
-  basePrice   Decimal  @db.Decimal(10, 2)
+  basePrice   Decimal @db.Decimal(10, 2)
   capacity    Int
-  active      Boolean  @default(true)
+  active      Boolean @default(true)
   rooms       Room[]
 }
 
 model Room {
-  id              Int              @id @default(autoincrement())
-  number          String           @unique
-  floor           Int
-  typeId          Int
-  type            RoomType         @relation(fields: [typeId], references: [id])
-  price           Decimal          @db.Decimal(10, 2)
-  capacity        Int
-  description     String?
-  status          RoomStatus       @default(LIBRE)
-  reservations    Reservation[]
-  stays           Stay[]
-  cleaningTasks   CleaningTask[]
-  cleaningEvidences CleaningEvidence[]
-  cleaningReports CleaningReport[]
+  id                 Int                 @id @default(autoincrement())
+  number             String              @unique
+  floor              Int
+  typeId             Int
+  type               RoomType            @relation(fields: [typeId], references: [id])
+  price              Decimal             @db.Decimal(10, 2)
+  capacity           Int
+  description        String?
+  status             RoomStatus          @default(LIBRE)
+  reservations       Reservation[]
+  stays              Stay[]
+  cleaningTasks      CleaningTask[]
+  cleaningEvidences  CleaningEvidence[]
+  cleaningReports    CleaningReport[]
   operationalReports OperationalReport[]
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
 
   @@index([status])
   @@index([floor])
@@ -374,29 +374,29 @@ model Room {
 }
 
 model Reservation {
-  id           Int               @id @default(autoincrement())
-  code         String            @unique
-  clientId     Int
-  roomId       Int
-  checkInDate  DateTime
-  checkOutDate DateTime
-  adults       Int               @default(1)
-  children     Int               @default(0)
-  totalPrice   Decimal           @db.Decimal(10, 2)
-  advance      Decimal           @default(0) @db.Decimal(10, 2)
-  balance      Decimal           @db.Decimal(10, 2)
-  status       ReservationStatus @default(PENDIENTE)
-  origin       ReservationOrigin @default(RECEPCION)
-  notes        String?
-  createdById  Int?
-  client       Client            @relation(fields: [clientId], references: [id])
-  room         Room              @relation(fields: [roomId], references: [id])
-  stay         Stay?
-  payments     Payment[]
-  poolEntries  PoolEntry[]
+  id                  Int                  @id @default(autoincrement())
+  code                String               @unique
+  clientId            Int
+  roomId              Int
+  checkInDate         DateTime
+  checkOutDate        DateTime
+  adults              Int                  @default(1)
+  children            Int                  @default(0)
+  totalPrice          Decimal              @db.Decimal(10, 2)
+  advance             Decimal              @default(0) @db.Decimal(10, 2)
+  balance             Decimal              @db.Decimal(10, 2)
+  status              ReservationStatus    @default(PENDIENTE)
+  origin              ReservationOrigin    @default(RECEPCION)
+  notes               String?
+  createdById         Int?
+  client              Client               @relation(fields: [clientId], references: [id])
+  room                Room                 @relation(fields: [roomId], references: [id])
+  stay                Stay?
+  payments            Payment[]
+  poolEntries         PoolEntry[]
   serviceReservations ServiceReservation[]
-  createdAt    DateTime          @default(now())
-  updatedAt    DateTime          @updatedAt
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
 
   @@index([checkInDate])
   @@index([checkOutDate])
@@ -404,41 +404,41 @@ model Reservation {
 }
 
 model Stay {
-  id            Int           @id @default(autoincrement())
-  reservationId Int           @unique
-  clientId      Int
-  roomId        Int
-  checkInAt     DateTime      @default(now())
-  checkOutAt    DateTime?
-  status        StayStatus    @default(ACTIVA)
-  reservation   Reservation   @relation(fields: [reservationId], references: [id])
-  client        Client        @relation(fields: [clientId], references: [id])
-  room          Room          @relation(fields: [roomId], references: [id])
-  consumptions  Consumption[]
-  payments      Payment[]
-  orders        Order[]
+  id                  Int                  @id @default(autoincrement())
+  reservationId       Int                  @unique
+  clientId            Int
+  roomId              Int
+  checkInAt           DateTime             @default(now())
+  checkOutAt          DateTime?
+  status              StayStatus           @default(ACTIVA)
+  reservation         Reservation          @relation(fields: [reservationId], references: [id])
+  client              Client               @relation(fields: [clientId], references: [id])
+  room                Room                 @relation(fields: [roomId], references: [id])
+  consumptions        Consumption[]
+  payments            Payment[]
+  orders              Order[]
   serviceReservations ServiceReservation[]
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
 }
 
 model Order {
-  id          Int          @id @default(autoincrement())
-  code        String       @unique
-  area        OrderArea
-  clientId    Int?
-  roomId      Int?
-  stayId      Int?
-  status      OrderStatus  @default(PENDIENTE)
-  total       Decimal      @default(0) @db.Decimal(10, 2)
-  notes       String?
-  createdById Int?
-  stay        Stay?        @relation(fields: [stayId], references: [id])
-  items       OrderItem[]
-  consumption Consumption?
+  id               Int                    @id @default(autoincrement())
+  code             String                 @unique
+  area             OrderArea
+  clientId         Int?
+  roomId           Int?
+  stayId           Int?
+  status           OrderStatus            @default(PENDIENTE)
+  total            Decimal                @default(0) @db.Decimal(10, 2)
+  notes            String?
+  createdById      Int?
+  stay             Stay?                  @relation(fields: [stayId], references: [id])
+  items            OrderItem[]
+  consumption      Consumption?
   stockReservation OrderStockReservation?
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
 
   @@index([area, status])
 }
@@ -471,27 +471,27 @@ model Consumption {
 }
 
 model Payment {
-  id            Int           @id @default(autoincrement())
-  clientId      Int?
-  reservationId Int?
-  stayId        Int?
-  eventId       Int?
+  id                   Int                 @id @default(autoincrement())
+  clientId             Int?
+  reservationId        Int?
+  stayId               Int?
+  eventId              Int?
   serviceReservationId Int?
-  method        PaymentMethod
-  reference     String?
-  status        PaymentStatus @default(REGISTRADO)
-  area          String
-  concept       String
-  amount        Decimal       @db.Decimal(10, 2)
-  paidAt        DateTime      @default(now())
-  createdById   Int?
-  client        Client?       @relation(fields: [clientId], references: [id])
-  reservation   Reservation?  @relation(fields: [reservationId], references: [id])
-  stay          Stay?         @relation(fields: [stayId], references: [id])
-  event         Event?        @relation(fields: [eventId], references: [id])
-  serviceReservation ServiceReservation? @relation(fields: [serviceReservationId], references: [id])
-  invoice       Invoice?
-  cashMovement  CashMovement?
+  method               PaymentMethod
+  reference            String?
+  status               PaymentStatus       @default(REGISTRADO)
+  area                 String
+  concept              String
+  amount               Decimal             @db.Decimal(10, 2)
+  paidAt               DateTime            @default(now())
+  createdById          Int?
+  client               Client?             @relation(fields: [clientId], references: [id])
+  reservation          Reservation?        @relation(fields: [reservationId], references: [id])
+  stay                 Stay?               @relation(fields: [stayId], references: [id])
+  event                Event?              @relation(fields: [eventId], references: [id])
+  serviceReservation   ServiceReservation? @relation(fields: [serviceReservationId], references: [id])
+  invoice              Invoice?
+  cashMovement         CashMovement?
 
   @@index([paidAt])
   @@index([area])
@@ -517,22 +517,22 @@ model Invoice {
 }
 
 model PoolEntry {
-  id            Int             @id @default(autoincrement())
-  clientId      Int?
-  reservationId Int?
-  eventId       Int?
+  id                   Int                 @id @default(autoincrement())
+  clientId             Int?
+  reservationId        Int?
+  eventId              Int?
   serviceReservationId Int?
-  type          PoolEntryType
-  qrCode        String?         @unique
-  people        Int
-  entryAt       DateTime        @default(now())
-  exitAt        DateTime?
-  status        PoolEntryStatus @default(ACTIVO)
-  createdById   Int?
-  client        Client?         @relation(fields: [clientId], references: [id])
-  reservation   Reservation?    @relation(fields: [reservationId], references: [id])
-  event         Event?          @relation(fields: [eventId], references: [id])
-  serviceReservation ServiceReservation? @relation(fields: [serviceReservationId], references: [id])
+  type                 PoolEntryType
+  qrCode               String?             @unique
+  people               Int
+  entryAt              DateTime            @default(now())
+  exitAt               DateTime?
+  status               PoolEntryStatus     @default(ACTIVO)
+  createdById          Int?
+  client               Client?             @relation(fields: [clientId], references: [id])
+  reservation          Reservation?        @relation(fields: [reservationId], references: [id])
+  event                Event?              @relation(fields: [eventId], references: [id])
+  serviceReservation   ServiceReservation? @relation(fields: [serviceReservationId], references: [id])
 }
 
 model PoolReport {
@@ -551,16 +551,16 @@ model PoolReport {
 }
 
 model EventSpace {
-  id        Int      @id @default(autoincrement())
-  name      String   @unique
+  id        Int     @id @default(autoincrement())
+  name      String  @unique
   capacity  Int
-  basePrice Decimal  @default(0) @db.Decimal(10, 2)
-  active    Boolean  @default(true)
+  basePrice Decimal @default(0) @db.Decimal(10, 2)
+  active    Boolean @default(true)
   events    Event[]
 }
 
 model Event {
-  id          Int             @id @default(autoincrement())
+  id          Int            @id @default(autoincrement())
   clientId    Int
   spaceId     Int
   name        String
@@ -568,15 +568,15 @@ model Event {
   startsAt    DateTime
   endsAt      DateTime
   guests      Int
-  price       Decimal         @db.Decimal(10, 2)
-  advance     Decimal         @default(0) @db.Decimal(10, 2)
-  balance     Decimal         @db.Decimal(10, 2)
-  status      EventStatus     @default(COTIZACION)
+  price       Decimal        @db.Decimal(10, 2)
+  advance     Decimal        @default(0) @db.Decimal(10, 2)
+  balance     Decimal        @db.Decimal(10, 2)
+  status      EventStatus    @default(COTIZACION)
   notes       String?
   contractUrl String?
   createdById Int?
-  client      Client          @relation(fields: [clientId], references: [id])
-  space       EventSpace      @relation(fields: [spaceId], references: [id])
+  client      Client         @relation(fields: [clientId], references: [id])
+  space       EventSpace     @relation(fields: [spaceId], references: [id])
   contract    EventContract?
   payments    Payment[]
   poolEntries PoolEntry[]
@@ -617,30 +617,30 @@ model VehicleEntry {
 }
 
 model CleaningTask {
-  id           Int                @id @default(autoincrement())
-  roomId       Int
-  status       CleaningStatus     @default(PENDIENTE)
-  priority     String             @default("MEDIA")
-  checkoutAt   DateTime?
-  assignedToId Int?
-  assignedTo   String?
-  startedAt    DateTime?
-  finishedAt   DateTime?
-  finishedById Int?
-  bathroom     Boolean            @default(false)
-  bed          Boolean            @default(false)
-  floor        Boolean            @default(false)
-  surfaces     Boolean            @default(false)
-  amenities    Boolean            @default(false)
-  minibar      Boolean            @default(false)
-  finalCheck   Boolean            @default(false)
-  room         Room               @relation(fields: [roomId], references: [id])
-  finishedBy   User?              @relation("CleaningTaskFinishedBy", fields: [finishedById], references: [id])
-  evidences    CleaningEvidence[]
-  reports      CleaningReport[]
+  id                 Int                 @id @default(autoincrement())
+  roomId             Int
+  status             CleaningStatus      @default(PENDIENTE)
+  priority           String              @default("MEDIA")
+  checkoutAt         DateTime?
+  assignedToId       Int?
+  assignedTo         String?
+  startedAt          DateTime?
+  finishedAt         DateTime?
+  finishedById       Int?
+  bathroom           Boolean             @default(false)
+  bed                Boolean             @default(false)
+  floor              Boolean             @default(false)
+  surfaces           Boolean             @default(false)
+  amenities          Boolean             @default(false)
+  minibar            Boolean             @default(false)
+  finalCheck         Boolean             @default(false)
+  room               Room                @relation(fields: [roomId], references: [id])
+  finishedBy         User?               @relation("CleaningTaskFinishedBy", fields: [finishedById], references: [id])
+  evidences          CleaningEvidence[]
+  reports            CleaningReport[]
   operationalReports OperationalReport[]
-  createdAt    DateTime           @default(now())
-  updatedAt    DateTime           @updatedAt
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
 }
 
 model CleaningEvidence {
@@ -670,8 +670,8 @@ model CleaningReport {
   priority       String             @default("MEDIA")
   status         ReportStatus       @default(ABIERTO)
   reportedById   Int?
-  resolvedAt      DateTime?
-  resolvedById    Int?
+  resolvedAt     DateTime?
+  resolvedById   Int?
   room           Room               @relation(fields: [roomId], references: [id])
   cleaningTask   CleaningTask?      @relation(fields: [cleaningTaskId], references: [id])
   reportedBy     User?              @relation(fields: [reportedById], references: [id])
@@ -735,31 +735,31 @@ model Category {
 }
 
 model Product {
-  id            Int                  @id @default(autoincrement())
-  name          String
-  categoryId    Int
-  area          InventoryArea        @default(RESTAURANTE)
-  unit          String
-  stock         Decimal              @default(0) @db.Decimal(14, 4)
-  minStock      Decimal              @default(0) @db.Decimal(14, 4)
-  cost          Decimal              @default(0) @db.Decimal(10, 2)
-  price         Decimal              @default(0) @db.Decimal(10, 2)
-  status        String               @default("ACTIVO")
-  active        Boolean              @default(true)
-  category      Category             @relation(fields: [categoryId], references: [id])
-  movements     InventoryMovement[]
-  orderItems    OrderItem[]
-  recipeItems   RecipeItem[]
+  id                    Int                         @id @default(autoincrement())
+  name                  String
+  categoryId            Int
+  area                  InventoryArea               @default(RESTAURANTE)
+  unit                  String
+  stock                 Decimal                     @default(0) @db.Decimal(14, 4)
+  minStock              Decimal                     @default(0) @db.Decimal(14, 4)
+  cost                  Decimal                     @default(0) @db.Decimal(10, 2)
+  price                 Decimal                     @default(0) @db.Decimal(10, 2)
+  status                String                      @default("ACTIVO")
+  active                Boolean                     @default(true)
+  category              Category                    @relation(fields: [categoryId], references: [id])
+  movements             InventoryMovement[]
+  orderItems            OrderItem[]
+  recipeItems           RecipeItem[]
   stockReservationItems OrderStockReservationItem[]
-  productionInputs ProductionBatch[] @relation("ProductionInput")
-  productionOutputs ProductionBatch[] @relation("ProductionOutput")
-  operationalReports OperationalReport[]
-  purchaseItems        PurchaseItem[]
-  inventoryLots        InventoryLot[]
-  inventoryInspections InventoryInspection[]
-  supplyItems   SupplyRequestItem[]
-  createdAt     DateTime             @default(now())
-  updatedAt     DateTime             @updatedAt
+  productionInputs      ProductionBatch[]           @relation("ProductionInput")
+  productionOutputs     ProductionBatch[]           @relation("ProductionOutput")
+  operationalReports    OperationalReport[]
+  purchaseItems         PurchaseItem[]
+  inventoryLots         InventoryLot[]
+  inventoryInspections  InventoryInspection[]
+  supplyItems           SupplyRequestItem[]
+  createdAt             DateTime                    @default(now())
+  updatedAt             DateTime                    @updatedAt
 
   @@unique([name, categoryId])
   @@index([stock])
@@ -782,28 +782,28 @@ model OrderStockReservation {
 }
 
 model OrderStockReservationItem {
-  id            Int                   @id @default(autoincrement())
+  id            Int                       @id @default(autoincrement())
   reservationId Int
   productId     Int
-  quantity      Decimal               @db.Decimal(14, 4)
+  quantity      Decimal                   @db.Decimal(14, 4)
   unit          String
   source        String?
   sourcesJson   Json?
-  reservation   OrderStockReservation @relation(fields: [reservationId], references: [id], onDelete: Restrict)
-  product       Product               @relation(fields: [productId], references: [id])
+  reservation   OrderStockReservation     @relation(fields: [reservationId], references: [id], onDelete: Restrict)
+  product       Product                   @relation(fields: [productId], references: [id])
   allocations   OrderStockLotAllocation[]
 
   @@index([productId])
 }
 
 model Recipe {
-  id        Int          @id @default(autoincrement())
+  id        Int           @id @default(autoincrement())
   name      String
   area      InventoryArea
-  active    Boolean      @default(true)
+  active    Boolean       @default(true)
   items     RecipeItem[]
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
 
   @@unique([name, area])
 }
@@ -833,36 +833,36 @@ enum MovementOrigin {
 }
 
 model InventoryMovement {
-  id          Int                   @id @default(autoincrement())
-  productId   Int
-  type        InventoryMovementType
-  origin      MovementOrigin?
-  quantity       Decimal                   @db.Decimal(14, 4)
-  beforeQty      Decimal                   @db.Decimal(14, 4)
-  afterQty       Decimal                   @db.Decimal(14, 4)
-  unitCost       Decimal?                  @db.Decimal(10, 2)
+  id             Int                      @id @default(autoincrement())
+  productId      Int
+  type           InventoryMovementType
+  origin         MovementOrigin?
+  quantity       Decimal                  @db.Decimal(14, 4)
+  beforeQty      Decimal                  @db.Decimal(14, 4)
+  afterQty       Decimal                  @db.Decimal(14, 4)
+  unitCost       Decimal?                 @db.Decimal(10, 2)
   reason         String?
   reference      String?
   createdById    Int?
   inventoryLotId Int?
-  allocationId   Int?                      @unique
-  product        Product                   @relation(fields: [productId], references: [id])
-  createdBy      User?                     @relation(fields: [createdById], references: [id])
-  inventoryLot   InventoryLot?             @relation(fields: [inventoryLotId], references: [id], onDelete: Restrict)
-  allocation     OrderStockLotAllocation?  @relation(fields: [allocationId], references: [id], onDelete: Restrict)
-  createdAt      DateTime                  @default(now())
+  allocationId   Int?                     @unique
+  product        Product                  @relation(fields: [productId], references: [id])
+  createdBy      User?                    @relation(fields: [createdById], references: [id])
+  inventoryLot   InventoryLot?            @relation(fields: [inventoryLotId], references: [id], onDelete: Restrict)
+  allocation     OrderStockLotAllocation? @relation(fields: [allocationId], references: [id], onDelete: Restrict)
+  createdAt      DateTime                 @default(now())
 }
 
 model OrderStockLotAllocation {
-  id                Int                       @id @default(autoincrement())
+  id                Int      @id @default(autoincrement())
   reservationItemId Int
   inventoryLotId    Int
-  quantity          Decimal                   @db.Decimal(14, 4)
-  createdAt         DateTime                  @default(now())
+  quantity          Decimal  @db.Decimal(14, 4)
+  createdAt         DateTime @default(now())
 
-  reservationItem   OrderStockReservationItem @relation(fields: [reservationItemId], references: [id], onDelete: Restrict)
-  inventoryLot      InventoryLot              @relation(fields: [inventoryLotId], references: [id], onDelete: Restrict)
-  movement          InventoryMovement?
+  reservationItem OrderStockReservationItem @relation(fields: [reservationItemId], references: [id], onDelete: Restrict)
+  inventoryLot    InventoryLot              @relation(fields: [inventoryLotId], references: [id], onDelete: Restrict)
+  movement        InventoryMovement?
 
   @@unique([reservationItemId, inventoryLotId])
   @@index([inventoryLotId])
@@ -891,17 +891,17 @@ model ProductionBatch {
 }
 
 model Supplier {
-  id        Int        @id @default(autoincrement())
-  ruc       String     @unique
-  name      String
-  contact   String?
-  phone     String?
-  email     String?
-  address   String?
-  status    String     @default("ACTIVO")
-  purchases Purchase[]
+  id            Int            @id @default(autoincrement())
+  ruc           String         @unique
+  name          String
+  contact       String?
+  phone         String?
+  email         String?
+  address       String?
+  status        String         @default("ACTIVO")
+  purchases     Purchase[]
   inventoryLots InventoryLot[]
-  createdAt DateTime   @default(now())
+  createdAt     DateTime       @default(now())
 }
 
 model Purchase {
@@ -917,65 +917,65 @@ model Purchase {
 }
 
 model PurchaseItem {
-  id         Int           @id @default(autoincrement())
-  purchaseId Int
-  productId  Int
-  quantity   Decimal       @db.Decimal(14, 4)
-  cost       Decimal       @db.Decimal(10, 2)
+  id              Int           @id @default(autoincrement())
+  purchaseId      Int
+  productId       Int
+  quantity        Decimal       @db.Decimal(14, 4)
+  cost            Decimal       @db.Decimal(10, 2)
   supplierLotCode String?
-  expiresAt  DateTime?
-  purchase   Purchase      @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
-  product    Product       @relation(fields: [productId], references: [id])
-  lot        InventoryLot?
+  expiresAt       DateTime?
+  purchase        Purchase      @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  product         Product       @relation(fields: [productId], references: [id])
+  lot             InventoryLot?
 }
 
 model InventoryLot {
-  id             Int       @id @default(autoincrement())
-  productId      Int
+  id              Int       @id @default(autoincrement())
+  productId       Int
   supplierId      Int?
   supplierLotCode String?
-  code           String    @unique
-  initialQty     Decimal   @db.Decimal(14, 4)
-  currentQty     Decimal   @db.Decimal(14, 4)
-  unitCost       Decimal   @db.Decimal(10, 2)
-  receivedAt     DateTime  @default(now())
-  expiresAt      DateTime?
-  purchaseItemId Int?      @unique
-  active         Boolean   @default(true)
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  code            String    @unique
+  initialQty      Decimal   @db.Decimal(14, 4)
+  currentQty      Decimal   @db.Decimal(14, 4)
+  unitCost        Decimal   @db.Decimal(10, 2)
+  receivedAt      DateTime  @default(now())
+  expiresAt       DateTime?
+  purchaseItemId  Int?      @unique
+  active          Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  product        Product                   @relation(fields: [productId], references: [id])
-  supplier       Supplier?                 @relation(fields: [supplierId], references: [id], onDelete: SetNull)
-  purchaseItem   PurchaseItem?             @relation(fields: [purchaseItemId], references: [id], onDelete: SetNull)
-  allocations    OrderStockLotAllocation[]
-  movements      InventoryMovement[]
-  inspections     InventoryInspection[]
+  product      Product                   @relation(fields: [productId], references: [id])
+  supplier     Supplier?                 @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  purchaseItem PurchaseItem?             @relation(fields: [purchaseItemId], references: [id], onDelete: SetNull)
+  allocations  OrderStockLotAllocation[]
+  movements    InventoryMovement[]
+  inspections  InventoryInspection[]
 
   @@index([supplierId, productId, supplierLotCode, expiresAt, unitCost], map: "InventoryLot_supplier_identity_idx")
 }
 
 model InventoryInspection {
-  id                Int                       @id @default(autoincrement())
-  productId         Int
-  inventoryLotId    Int
-  quantity          Decimal                   @db.Decimal(14, 4)
-  area              InventoryArea
-  status            InventoryInspectionStatus @default(PENDIENTE)
-  reason            String
-  notes             String?
-  storageLocation   String?
-  reference         String?
-  createdById       Int?
-  resolvedById      Int?
-  resolutionNotes   String?
-  resolvedAt        DateTime?
-  createdAt         DateTime                  @default(now())
+  id              Int                       @id @default(autoincrement())
+  productId       Int
+  inventoryLotId  Int
+  quantity        Decimal                   @db.Decimal(14, 4)
+  area            InventoryArea
+  status          InventoryInspectionStatus @default(PENDIENTE)
+  reason          String
+  notes           String?
+  storageLocation String?
+  reference       String?
+  createdById     Int?
+  resolvedById    Int?
+  resolutionNotes String?
+  resolvedAt      DateTime?
+  createdAt       DateTime                  @default(now())
 
-  product           Product                   @relation(fields: [productId], references: [id], onDelete: Restrict)
-  inventoryLot      InventoryLot              @relation(fields: [inventoryLotId], references: [id], onDelete: Restrict)
-  createdBy         User?                     @relation("InventoryInspectionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  resolvedBy        User?                     @relation("InventoryInspectionResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull)
+  product      Product      @relation(fields: [productId], references: [id], onDelete: Restrict)
+  inventoryLot InventoryLot @relation(fields: [inventoryLotId], references: [id], onDelete: Restrict)
+  createdBy    User?        @relation("InventoryInspectionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  resolvedBy   User?        @relation("InventoryInspectionResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull)
 
   @@index([status])
   @@index([productId])
@@ -1043,97 +1043,102 @@ model AuditLog {
 }
 
 model HotelSettings {
-  id          Int      @id @default(1)
-  hotelName   String   @default("Hotel Park Plaza")
-  ruc         String?
-  address     String?
-  phone       String?
-  email       String?
-  logoUrl     String?
-  currency    String   @default("PEN")
-  taxRate     Decimal  @default(18) @db.Decimal(5, 2)
-  timezone    String   @default("America/Lima")
-  dateFormat  String   @default("dd/MM/yyyy")
-  updatedAt   DateTime @updatedAt
+  id         Int      @id @default(1)
+  hotelName  String   @default("Hotel Park Plaza")
+  ruc        String?
+  address    String?
+  phone      String?
+  email      String?
+  logoUrl    String?
+  currency   String   @default("PEN")
+  taxRate    Decimal  @default(18) @db.Decimal(5, 2)
+  timezone   String   @default("America/Lima")
+  dateFormat String   @default("dd/MM/yyyy")
+  updatedAt  DateTime @updatedAt
 }
 
 model ServiceSlot {
-  id           Int      @id @default(autoincrement())
+  id           Int                    @id @default(autoincrement())
   serviceType  ServiceReservationType
   startTime    String
   endTime      String
   capacity     Int
-  active       Boolean  @default(true)
+  active       Boolean                @default(true)
   reservations ServiceReservation[]
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
 
+  @@unique([serviceType, startTime, endTime])
   @@index([serviceType, active])
 }
 
 model ServicePlan {
-  id           Int      @id @default(autoincrement())
+  id           Int                    @id @default(autoincrement())
   serviceType  ServiceReservationType
   code         String
   name         String
   description  String?
-  price        Decimal  @db.Decimal(10, 2)
+  price        Decimal                @db.Decimal(10, 2)
   pricingMode  ServicePricingMode
-  active       Boolean  @default(true)
+  active       Boolean                @default(true)
   reservations ServiceReservation[]
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+
+  @@unique([serviceType, code])
 }
 
 model ServiceExtra {
-  id                  Int      @id @default(autoincrement())
-  serviceType         ServiceReservationType
-  name                String
-  description         String?
-  price               Decimal  @db.Decimal(10, 2)
-  active              Boolean  @default(true)
-  reservationExtras   ServiceReservationExtra[]
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  id                Int                       @id @default(autoincrement())
+  serviceType       ServiceReservationType
+  name              String
+  description       String?
+  price             Decimal                   @db.Decimal(10, 2)
+  active            Boolean                   @default(true)
+  reservationExtras ServiceReservationExtra[]
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+
+  @@unique([serviceType, name])
 }
 
 model ServiceReservation {
-  id             Int      @id @default(autoincrement())
-  code           String   @unique
-  clientId       Int
-  stayId         Int?
-  reservationId  Int?
-  serviceType    ServiceReservationType
-  status         ServiceReservationStatus @default(PENDIENTE)
-  date           DateTime
-  slotId         Int
-  adults         Int      @default(0)
-  children       Int      @default(0)
-  people         Int
-  planId         Int?
-  planCode       String?
-  planName       String?
-  baseAmount     Decimal  @db.Decimal(10, 2)
-  extrasAmount   Decimal  @default(0) @db.Decimal(10, 2)
-  totalAmount    Decimal  @db.Decimal(10, 2)
-  advance        Decimal  @default(0) @db.Decimal(10, 2)
-  balance        Decimal  @db.Decimal(10, 2)
-  notes          String?
-  qrCode         String?  @unique
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  cancelledAt    DateTime?
-  checkedInAt    DateTime?
-  completedAt    DateTime?
+  id            Int                      @id @default(autoincrement())
+  code          String                   @unique
+  clientId      Int
+  stayId        Int?
+  reservationId Int?
+  serviceType   ServiceReservationType
+  status        ServiceReservationStatus @default(PENDIENTE)
+  date          DateTime
+  slotId        Int
+  adults        Int                      @default(0)
+  children      Int                      @default(0)
+  people        Int
+  planId        Int?
+  planCode      String?
+  planName      String?
+  baseAmount    Decimal                  @db.Decimal(10, 2)
+  extrasAmount  Decimal                  @default(0) @db.Decimal(10, 2)
+  totalAmount   Decimal                  @db.Decimal(10, 2)
+  advance       Decimal                  @default(0) @db.Decimal(10, 2)
+  balance       Decimal                  @db.Decimal(10, 2)
+  notes         String?
+  qrCode        String?                  @unique
+  createdAt     DateTime                 @default(now())
+  updatedAt     DateTime                 @updatedAt
+  cancelledAt   DateTime?
+  checkedInAt   DateTime?
+  completedAt   DateTime?
 
-  client         Client   @relation(fields: [clientId], references: [id])
-  stay           Stay?    @relation(fields: [stayId], references: [id])
-  reservation    Reservation? @relation(fields: [reservationId], references: [id])
-  slot           ServiceSlot @relation(fields: [slotId], references: [id])
-  plan           ServicePlan? @relation(fields: [planId], references: [id])
-  extras         ServiceReservationExtra[]
-  payments       Payment[]
-  poolEntries    PoolEntry[]
+  client      Client                    @relation(fields: [clientId], references: [id])
+  stay        Stay?                     @relation(fields: [stayId], references: [id])
+  reservation Reservation?              @relation(fields: [reservationId], references: [id])
+  slot        ServiceSlot               @relation(fields: [slotId], references: [id])
+  plan        ServicePlan?              @relation(fields: [planId], references: [id])
+  extras      ServiceReservationExtra[]
+  payments    Payment[]
+  poolEntries PoolEntry[]
 
   @@index([clientId])
   @@index([stayId])
@@ -1141,17 +1146,17 @@ model ServiceReservation {
   @@index([status])
   @@index([date])
   @@index([slotId])
+  @@index([serviceType, date, slotId, status])
 }
 
 model ServiceReservationExtra {
-  id                   Int      @id @default(autoincrement())
+  id                   Int     @id @default(autoincrement())
   serviceReservationId Int
   serviceExtraId       Int
   quantity             Int
-  unitPrice            Decimal  @db.Decimal(10, 2)
-  subtotal             Decimal  @db.Decimal(10, 2)
+  unitPrice            Decimal @db.Decimal(10, 2)
+  subtotal             Decimal @db.Decimal(10, 2)
 
-  serviceReservation   ServiceReservation @relation(fields: [serviceReservationId], references: [id], onDelete: Cascade)
-  serviceExtra         ServiceExtra @relation(fields: [serviceExtraId], references: [id])
+  serviceReservation ServiceReservation @relation(fields: [serviceReservationId], references: [id], onDelete: Cascade)
+  serviceExtra       ServiceExtra       @relation(fields: [serviceExtraId], references: [id])
 }
-

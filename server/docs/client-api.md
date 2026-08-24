@@ -20,7 +20,14 @@ Consulta habitaciones disponibles por fechas.
 Lista de servicios adicionales (Piscina, Mirador) disponibles.
 
 ### `GET /api/public/services/:type/availability`
-Consulta disponibilidad real por día. Query param: `date`.
+Consulta disponibilidad real de Piscina o Mirador.
+
+Query params:
+- `date=YYYY-MM-DD`: devuelve un único día.
+- `from=YYYY-MM-DD`: devuelve una ventana de 21 días.
+
+Estados que ocupan cupo: `PENDIENTE`, `CONFIRMADA`, `EN_USO`.
+Estados que liberan cupo: `CANCELADA`, `FINALIZADA`.
 
 ### `GET /api/public/services/:type/plans`
 Lista de planes/tarifas para el servicio.
@@ -189,7 +196,7 @@ Crea una reserva de servicio (Piscina o Mirador). Protegido contra sobreventa (T
 ```json
 {
   "serviceType": "PISCINA",
-  "date": "2026-08-25T00:00:00.000Z",
+  "date": "2026-08-25",
   "slotId": 1,
   "planId": 1,
   "adults": 2,
@@ -203,6 +210,42 @@ Crea una reserva de servicio (Piscina o Mirador). Protegido contra sobreventa (T
 
 ### `PATCH /api/client/service-reservations/:id/cancel`
 Cancela la reserva siempre y cuando su estado sea `PENDIENTE` o `CONFIRMADA`.
+Si existen pagos registrados, se conservan para gestión administrativa; la devolución no está automatizada.
+
+### `POST /api/client/service-reservations/:id/payments`
+Registra un pago de una reserva de servicio. La identidad se deriva del JWT del cliente; el body no puede definir `clientId`, `stayId` ni `serviceReservationId`.
+
+**Payload:**
+```json
+{
+  "method": "YAPE",
+  "amount": 50,
+  "reference": "OPERACION-123"
+}
+```
+
+Regla de confirmación:
+- Pago parcial: la reserva sigue `PENDIENTE`.
+- Pago total: `balance = 0` y la reserva pasa a `CONFIRMADA`.
+- Sobrepago: rechazado.
+
+### Estados y QR
+- `PENDIENTE`: no permite check-in y el QR no se expone como válido.
+- `CONFIRMADA`: QR válido para acceso.
+- `EN_USO`: QR ya consumido.
+- `FINALIZADA`: QR no reutilizable.
+- `CANCELADA`: QR inválido.
+
+### Endpoints internos
+- Piscina check-in: `POST /api/pool/service-reservations/:id/check-in`.
+- Piscina finalizar: `PATCH /api/pool/service-reservations/:id/complete`.
+- Mirador check-in: `POST /api/service-reservations/:id/check-in`.
+- Mirador finalizar: `PATCH /api/service-reservations/:id/complete`.
+
+Piscina crea un `PoolEntry` al check-in. Mirador no crea `PoolEntry`.
+
+### Legacy
+`POST /api/client/pool` queda como endpoint legado/deprecated. Las nuevas reservas de Piscina y Mirador deben usar `ServiceReservation`.
 
 ## 7. Socket.IO (Tiempo Real)
 
@@ -225,7 +268,9 @@ Al validarse el token, el servidor une al socket a una habitación (room) llamad
 
 **Eventos Escuchables:**
 - `order:status_updated`
+- `service-reservation:created`
 - `service-reservation:updated`
+- `service-reservation:cancelled`
 
 **Payload Emitido (`order:status_updated`):**
 ```json

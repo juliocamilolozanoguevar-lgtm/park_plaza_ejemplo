@@ -31,5 +31,6 @@ secure.post("/service-reservations", controller.createServiceReservation);
 secure.get("/service-reservations", controller.listServiceReservations);
 secure.get("/service-reservations/:id", controller.getServiceReservationById);
 secure.patch("/service-reservations/:id/cancel", controller.cancelServiceReservation);
+secure.post("/service-reservations/:id/payments", controller.payServiceReservation);
 
 clientPortalRoutes.use("/", secure);

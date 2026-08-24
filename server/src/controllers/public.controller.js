@@ -33,10 +33,10 @@ export const listServices = asyncHandler(async (req, res) => {
 });
 
 export const serviceAvailability = asyncHandler(async (req, res) => {
-  const { date } = req.query;
+  const { date, from } = req.query;
   const type = req.params.type.toUpperCase();
-  if (!date) return res.status(400).json({ error: "date es requerido" });
-  res.json(await getServiceAvailability(type, date));
+  if (!date && !from) return res.status(400).json({ error: "date o from es requerido" });
+  res.json(await getServiceAvailability(type, { date, from }));
 });
 
 export const servicePlans = asyncHandler(async (req, res) => {

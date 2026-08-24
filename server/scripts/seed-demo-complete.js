@@ -65,10 +65,25 @@ async function clearDemoData() {
   const demoCleaningTaskIds = demoCleaningTasks.map((task) => task.id);
   const demoReports = await prisma.operationalReport.findMany({ where: { code: { startsWith: PREFIX } }, select: { id: true } });
   const demoReportIds = demoReports.map((report) => report.id);
+  const demoServiceReservations = await prisma.serviceReservation.findMany({
+    where: {
+      OR: [
+        { code: { startsWith: "SR-DEMO-" } },
+        { clientId: { in: demoClientIds } },
+        { stay: { reservationId: { in: demoReservationIds } } }
+      ]
+    },
+    select: { id: true }
+  });
+  const demoServiceReservationIds = demoServiceReservations.map((reservation) => reservation.id);
 
   await deleteByChunks(prisma.auditLog, { OR: [{ description: { startsWith: PREFIX } }, { detail: { startsWith: PREFIX } }, { userId: { in: demoUserIds } }] });
   await deleteByChunks(prisma.attendanceRecord, { userId: { in: demoUserIds } });
   await deleteByChunks(prisma.cashMovement, { OR: [{ concept: { startsWith: PREFIX } }, { createdById: { in: demoUserIds } }] });
+  await deleteByChunks(prisma.serviceReservationExtra, { serviceReservationId: { in: demoServiceReservationIds } });
+  await deleteByChunks(prisma.payment, { serviceReservationId: { in: demoServiceReservationIds } });
+  await deleteByChunks(prisma.poolEntry, { serviceReservationId: { in: demoServiceReservationIds } });
+  await deleteByChunks(prisma.serviceReservation, { id: { in: demoServiceReservationIds } });
   await deleteByChunks(prisma.invoice, { OR: [{ clientId: { in: demoClientIds } }, { payment: { reference: { startsWith: PREFIX } } }] });
   await deleteByChunks(prisma.payment, { OR: [{ reference: { startsWith: PREFIX } }, { clientId: { in: demoClientIds } }, { createdById: { in: demoUserIds } }] });
   await deleteByChunks(prisma.operationalReportEvidence, { reportId: { in: demoReportIds } });
@@ -868,87 +883,132 @@ main()
 async function createServiceDemoData({ clients, stays }) {
   console.log("-> Creando data demo de Servicios (Piscina y Mirador)...");
 
-  await prisma.serviceReservationExtra.deleteMany();
-  await prisma.serviceReservation.deleteMany();
-  await prisma.serviceExtra.deleteMany();
-  await prisma.servicePlan.deleteMany();
-  await prisma.serviceSlot.deleteMany();
+  const demoReservations = await prisma.serviceReservation.findMany({
+    where: { code: { startsWith: "SR-DEMO-" } },
+    select: { id: true }
+  });
+  const demoReservationIds = demoReservations.map((reservation) => reservation.id);
+  await prisma.serviceReservationExtra.deleteMany({ where: { serviceReservationId: { in: demoReservationIds } } });
+  await prisma.payment.deleteMany({ where: { serviceReservationId: { in: demoReservationIds } } });
+  await prisma.poolEntry.deleteMany({ where: { serviceReservationId: { in: demoReservationIds } } });
+  await prisma.serviceReservation.deleteMany({ where: { id: { in: demoReservationIds } } });
 
   const slotsPiscina = [
     { serviceType: "PISCINA", startTime: "09:00", endTime: "12:00", capacity: 20 },
-    { serviceType: "PISCINA", startTime: "13:00", endTime: "18:00", capacity: 20 }
+    { serviceType: "PISCINA", startTime: "13:00", endTime: "16:00", capacity: 20 },
+    { serviceType: "PISCINA", startTime: "16:00", endTime: "19:00", capacity: 20 }
   ];
   const slotsMirador = [
-    { serviceType: "MIRADOR", startTime: "16:00", endTime: "19:00", capacity: 15 },
-    { serviceType: "MIRADOR", startTime: "19:00", endTime: "22:00", capacity: 15 }
+    { serviceType: "MIRADOR", startTime: "16:30", endTime: "17:30", capacity: 15 },
+    { serviceType: "MIRADOR", startTime: "18:00", endTime: "19:00", capacity: 15 },
+    { serviceType: "MIRADOR", startTime: "19:30", endTime: "20:30", capacity: 15 }
   ];
 
-  await prisma.serviceSlot.createMany({ data: [...slotsPiscina, ...slotsMirador] });
+  for (const slot of [...slotsPiscina, ...slotsMirador]) {
+    const existing = await prisma.serviceSlot.findFirst({
+      where: { serviceType: slot.serviceType, startTime: slot.startTime, endTime: slot.endTime }
+    });
+    if (existing) await prisma.serviceSlot.update({ where: { id: existing.id }, data: { capacity: slot.capacity, active: true } });
+    else await prisma.serviceSlot.create({ data: slot });
+  }
   const allSlots = await prisma.serviceSlot.findMany();
 
   const plans = [
     { serviceType: "PISCINA", code: "P-ADU", name: "Piscina Adulto", price: 30, pricingMode: "ADULTO" },
     { serviceType: "PISCINA", code: "P-NIN", name: "Piscina Niño", price: 15, pricingMode: "NINO" },
-    { serviceType: "MIRADOR", code: "M-STD", name: "Mirador General", price: 20, pricingMode: "PERSONA" }
+    { serviceType: "PISCINA", code: "P-FAM", name: "Piscina Familiar", price: 90, pricingMode: "FAMILIAR" },
+    { serviceType: "MIRADOR", code: "M-STD", name: "Mirador General", price: 20, pricingMode: "PERSONA" },
+    { serviceType: "MIRADOR", code: "M-PRV", name: "Mirador Privado", price: 120, pricingMode: "FIJO" }
   ];
-  await prisma.servicePlan.createMany({ data: plans });
+  for (const plan of plans) {
+    const existing = await prisma.servicePlan.findFirst({ where: { serviceType: plan.serviceType, code: plan.code } });
+    if (existing) await prisma.servicePlan.update({ where: { id: existing.id }, data: { ...plan, active: true } });
+    else await prisma.servicePlan.create({ data: plan });
+  }
   const allPlans = await prisma.servicePlan.findMany();
 
   const extras = [
     { serviceType: "PISCINA", name: "Toalla Extra", price: 5 },
-    { serviceType: "MIRADOR", name: "Copa de Vino", price: 15 }
+    { serviceType: "PISCINA", name: "Locker familiar", price: 8 },
+    { serviceType: "MIRADOR", name: "Copa de Vino", price: 15 },
+    { serviceType: "MIRADOR", name: "Tabla de piqueos", price: 35 }
   ];
-  await prisma.serviceExtra.createMany({ data: extras });
+  for (const extra of extras) {
+    const existing = await prisma.serviceExtra.findFirst({ where: { serviceType: extra.serviceType, name: extra.name } });
+    if (existing) await prisma.serviceExtra.update({ where: { id: existing.id }, data: { ...extra, active: true } });
+    else await prisma.serviceExtra.create({ data: extra });
+  }
 
   if (clients && clients.length > 0 && stays && stays.length > 0) {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const demoDate = addDays(0, 0, 0);
     
-    const poolSlot = allSlots.find(s => s.serviceType === "PISCINA");
-    const poolPlan = allPlans.find(p => p.code === "P-ADU");
-    await prisma.serviceReservation.create({
-      data: {
-        code: `SR-DEMO-P1`,
-        clientId: clients[0].id,
-        stayId: stays[0].id,
-        serviceType: "PISCINA",
-        status: "CONFIRMADA",
-        date: today,
-        slotId: poolSlot.id,
-        adults: 2,
-        children: 0,
-        people: 2,
-        planId: poolPlan.id,
-        planCode: poolPlan.code,
-        planName: poolPlan.name,
-        baseAmount: 60,
-        totalAmount: 60,
-        balance: 60,
-        qrCode: "QR-DEMO-P1"
+    const createReservation = async ({ code, serviceType, status, slotStart, planCode, clientIndex, adults, children = 0, total, advance = 0 }) => {
+      const slot = allSlots.find((item) => item.serviceType === serviceType && item.startTime === slotStart);
+      const plan = allPlans.find((item) => item.serviceType === serviceType && item.code === planCode);
+      const reservation = await prisma.serviceReservation.create({
+        data: {
+          code,
+          clientId: clients[clientIndex].id,
+          stayId: stays[clientIndex % stays.length]?.id || null,
+          reservationId: stays[clientIndex % stays.length]?.reservationId || null,
+          serviceType,
+          status,
+          date: demoDate,
+          slotId: slot.id,
+          adults,
+          children,
+          people: adults + children,
+          planId: plan.id,
+          planCode: plan.code,
+          planName: plan.name,
+          baseAmount: total,
+          extrasAmount: 0,
+          totalAmount: total,
+          advance,
+          balance: Number(total) - Number(advance),
+          qrCode: `QR-${code}`,
+          checkedInAt: status === "FINALIZADA" ? addDays(0, 16, 45) : null,
+          completedAt: status === "FINALIZADA" ? addDays(0, 18, 0) : null
+        }
+      });
+      if (status !== "PENDIENTE" && Number(advance) > 0) {
+        await prisma.payment.create({
+          data: {
+            clientId: reservation.clientId,
+            reservationId: reservation.reservationId,
+            stayId: reservation.stayId,
+            serviceReservationId: reservation.id,
+            method: "YAPE",
+            reference: `${code}-PAGO`,
+            status: "REGISTRADO",
+            area: serviceType,
+            concept: `Pago reserva servicio ${code}`,
+            amount: advance
+          }
+        });
       }
-    });
+      if (serviceType === "PISCINA" && status === "FINALIZADA") {
+        await prisma.poolEntry.create({
+          data: {
+            clientId: reservation.clientId,
+            reservationId: reservation.reservationId,
+            serviceReservationId: reservation.id,
+            type: reservation.stayId ? "HUESPED" : "CLIENTE_EXTERNO",
+            qrCode: reservation.qrCode,
+            people: reservation.people,
+            entryAt: reservation.checkedInAt,
+            exitAt: reservation.completedAt,
+            status: "FINALIZADO"
+          }
+        });
+      }
+    };
 
-    const miradorSlot = allSlots.find(s => s.serviceType === "MIRADOR");
-    const miradorPlan = allPlans.find(p => p.code === "M-STD");
-    await prisma.serviceReservation.create({
-      data: {
-        code: `SR-DEMO-M1`,
-        clientId: clients[0].id,
-        stayId: stays[0].id,
-        serviceType: "MIRADOR",
-        status: "PENDIENTE",
-        date: today,
-        slotId: miradorSlot.id,
-        adults: 2,
-        people: 2,
-        planId: miradorPlan.id,
-        planCode: miradorPlan.code,
-        planName: miradorPlan.name,
-        baseAmount: 40,
-        totalAmount: 40,
-        balance: 40,
-        qrCode: "QR-DEMO-M1"
-      }
-    });
+    await createReservation({ code: "SR-DEMO-PEN-PIS", serviceType: "PISCINA", status: "PENDIENTE", slotStart: "09:00", planCode: "P-ADU", clientIndex: 0, adults: 2, total: 60 });
+    await createReservation({ code: "SR-DEMO-CON-PIS", serviceType: "PISCINA", status: "CONFIRMADA", slotStart: "13:00", planCode: "P-FAM", clientIndex: 1, adults: 2, children: 2, total: 90, advance: 90 });
+    await createReservation({ code: "SR-DEMO-FIN-PIS", serviceType: "PISCINA", status: "FINALIZADA", slotStart: "16:00", planCode: "P-NIN", clientIndex: 2, adults: 0, children: 2, total: 30, advance: 30 });
+    await createReservation({ code: "SR-DEMO-PEN-MIR", serviceType: "MIRADOR", status: "PENDIENTE", slotStart: "16:30", planCode: "M-STD", clientIndex: 3, adults: 2, total: 40 });
+    await createReservation({ code: "SR-DEMO-CON-MIR", serviceType: "MIRADOR", status: "CONFIRMADA", slotStart: "18:00", planCode: "M-PRV", clientIndex: 4, adults: 2, total: 120, advance: 120 });
+    await createReservation({ code: "SR-DEMO-FIN-MIR", serviceType: "MIRADOR", status: "FINALIZADA", slotStart: "19:30", planCode: "M-STD", clientIndex: 5, adults: 2, total: 40, advance: 40 });
   }
 }

@@ -38,11 +38,11 @@ import {
 } from "../services/service-reservation.service.js";
 
 export const checkInReservation = asyncHandler(async (req, res) => {
-  const data = await checkInSR(req.params.id, req.user);
+  const data = await checkInSR(req.params.id, req.user, "PISCINA");
   res.json(data);
 });
 
 export const completeReservation = asyncHandler(async (req, res) => {
-  const data = await completeSR(req.params.id);
+  const data = await completeSR(req.params.id, "PISCINA");
   res.json(data);
 });
