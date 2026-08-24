@@ -31,3 +31,18 @@ export const storeReport = asyncHandler(async (req, res) => {
   await audit(req, "PISCINA", "REPORTE", report.description);
   res.status(201).json(report);
 });
+
+import { 
+  checkInServiceReservation as checkInSR, 
+  completeServiceReservation as completeSR 
+} from "../services/service-reservation.service.js";
+
+export const checkInReservation = asyncHandler(async (req, res) => {
+  const data = await checkInSR(req.params.id, req.user);
+  res.json(data);
+});
+
+export const completeReservation = asyncHandler(async (req, res) => {
+  const data = await completeSR(req.params.id);
+  res.json(data);
+});

@@ -1,5 +1,26 @@
 -- CreateEnum
 DO $$ BEGIN
+  CREATE TYPE "RoleName" AS ENUM ('ADMINISTRADOR', 'RECEPCIONISTA', 'RESTAURANTE', 'BARTENDER', 'PISCINA', 'LIMPIEZA', 'EVENTOS', 'MANTENIMIENTO');
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
+-- CreateEnum
+DO $$ BEGIN
+  CREATE TYPE "UserStatus" AS ENUM ('ACTIVO', 'SUSPENDIDO', 'INACTIVO');
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
+-- CreateEnum
+DO $$ BEGIN
+  CREATE TYPE "InventoryArea" AS ENUM ('RESTAURANTE', 'BARTENDER', 'LIMPIEZA', 'MANTENIMIENTO');
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
+-- CreateEnum
+DO $$ BEGIN
   CREATE TYPE "ReservationOrigin" AS ENUM ('WEB', 'RECEPCION', 'ADMIN');
 EXCEPTION
   WHEN duplicate_object THEN null;

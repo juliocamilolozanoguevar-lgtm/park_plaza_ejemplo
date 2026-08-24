@@ -11,3 +11,6 @@ poolRoutes.post("/", authorize("PISCINA:CREAR"), controller.store);
 poolRoutes.patch("/:id/finish", authorize("PISCINA:EDITAR"), controller.finish);
 poolRoutes.get("/reports", authorize("PISCINA:VER"), controller.reports);
 poolRoutes.post("/reports", authorize("PISCINA:CREAR"), controller.storeReport);
+
+poolRoutes.post("/service-reservations/:id/check-in", authorize("PISCINA:EDITAR"), controller.checkInReservation);
+poolRoutes.patch("/service-reservations/:id/complete", authorize("PISCINA:EDITAR"), controller.completeReservation);

@@ -27,4 +27,9 @@ secure.post("/events", controller.createEvent);
 
 secure.post("/pool", controller.createPoolAccess);
 
+secure.post("/service-reservations", controller.createServiceReservation);
+secure.get("/service-reservations", controller.listServiceReservations);
+secure.get("/service-reservations/:id", controller.getServiceReservationById);
+secure.patch("/service-reservations/:id/cancel", controller.cancelServiceReservation);
+
 clientPortalRoutes.use("/", secure);

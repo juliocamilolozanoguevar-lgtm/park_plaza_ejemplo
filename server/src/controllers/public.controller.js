@@ -20,3 +20,29 @@ export const createReservation = asyncHandler(async (req, res) => {
 export const showReservation = asyncHandler(async (req, res) => {
   res.json(await service.getPublicReservation(req.params.code, req.query.documentNumber));
 });
+
+import { 
+  getPublicServices, 
+  getServiceAvailability, 
+  getServicePlans, 
+  getServiceExtras 
+} from "../services/service-reservation.service.js";
+
+export const listServices = asyncHandler(async (req, res) => {
+  res.json(await getPublicServices());
+});
+
+export const serviceAvailability = asyncHandler(async (req, res) => {
+  const { date } = req.query;
+  const type = req.params.type.toUpperCase();
+  if (!date) return res.status(400).json({ error: "date es requerido" });
+  res.json(await getServiceAvailability(type, date));
+});
+
+export const servicePlans = asyncHandler(async (req, res) => {
+  res.json(await getServicePlans(req.params.type.toUpperCase()));
+});
+
+export const serviceExtras = asyncHandler(async (req, res) => {
+  res.json(await getServiceExtras(req.params.type.toUpperCase()));
+});

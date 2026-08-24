@@ -206,6 +206,27 @@ enum AttendanceStatus {
   REQUIERE_REVISION
 }
 
+enum ServiceReservationType {
+  PISCINA
+  MIRADOR
+}
+
+enum ServiceReservationStatus {
+  PENDIENTE
+  CONFIRMADA
+  CANCELADA
+  EN_USO
+  FINALIZADA
+}
+
+enum ServicePricingMode {
+  ADULTO
+  NINO
+  FAMILIAR
+  PERSONA
+  FIJO
+}
+
 model Role {
   id          Int              @id @default(autoincrement())
   name        RoleName         @unique
@@ -308,6 +329,7 @@ model Client {
   invoices       Invoice[]
   poolEntries    PoolEntry[]
   poolReports    PoolReport[]
+  serviceReservations ServiceReservation[]
   events         Event[]
   vehicleEntries VehicleEntry[]
   createdAt      DateTime       @default(now())
@@ -372,6 +394,7 @@ model Reservation {
   stay         Stay?
   payments     Payment[]
   poolEntries  PoolEntry[]
+  serviceReservations ServiceReservation[]
   createdAt    DateTime          @default(now())
   updatedAt    DateTime          @updatedAt
 
@@ -394,6 +417,7 @@ model Stay {
   consumptions  Consumption[]
   payments      Payment[]
   orders        Order[]
+  serviceReservations ServiceReservation[]
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 }
@@ -452,6 +476,7 @@ model Payment {
   reservationId Int?
   stayId        Int?
   eventId       Int?
+  serviceReservationId Int?
   method        PaymentMethod
   reference     String?
   status        PaymentStatus @default(REGISTRADO)
@@ -464,6 +489,7 @@ model Payment {
   reservation   Reservation?  @relation(fields: [reservationId], references: [id])
   stay          Stay?         @relation(fields: [stayId], references: [id])
   event         Event?        @relation(fields: [eventId], references: [id])
+  serviceReservation ServiceReservation? @relation(fields: [serviceReservationId], references: [id])
   invoice       Invoice?
   cashMovement  CashMovement?
 
@@ -495,6 +521,7 @@ model PoolEntry {
   clientId      Int?
   reservationId Int?
   eventId       Int?
+  serviceReservationId Int?
   type          PoolEntryType
   qrCode        String?         @unique
   people        Int
@@ -505,6 +532,7 @@ model PoolEntry {
   client        Client?         @relation(fields: [clientId], references: [id])
   reservation   Reservation?    @relation(fields: [reservationId], references: [id])
   event         Event?          @relation(fields: [eventId], references: [id])
+  serviceReservation ServiceReservation? @relation(fields: [serviceReservationId], references: [id])
 }
 
 model PoolReport {
@@ -1027,5 +1055,103 @@ model HotelSettings {
   timezone    String   @default("America/Lima")
   dateFormat  String   @default("dd/MM/yyyy")
   updatedAt   DateTime @updatedAt
+}
+
+model ServiceSlot {
+  id           Int      @id @default(autoincrement())
+  serviceType  ServiceReservationType
+  startTime    String
+  endTime      String
+  capacity     Int
+  active       Boolean  @default(true)
+  reservations ServiceReservation[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([serviceType, active])
+}
+
+model ServicePlan {
+  id           Int      @id @default(autoincrement())
+  serviceType  ServiceReservationType
+  code         String
+  name         String
+  description  String?
+  price        Decimal  @db.Decimal(10, 2)
+  pricingMode  ServicePricingMode
+  active       Boolean  @default(true)
+  reservations ServiceReservation[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model ServiceExtra {
+  id                  Int      @id @default(autoincrement())
+  serviceType         ServiceReservationType
+  name                String
+  description         String?
+  price               Decimal  @db.Decimal(10, 2)
+  active              Boolean  @default(true)
+  reservationExtras   ServiceReservationExtra[]
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+model ServiceReservation {
+  id             Int      @id @default(autoincrement())
+  code           String   @unique
+  clientId       Int
+  stayId         Int?
+  reservationId  Int?
+  serviceType    ServiceReservationType
+  status         ServiceReservationStatus @default(PENDIENTE)
+  date           DateTime
+  slotId         Int
+  adults         Int      @default(0)
+  children       Int      @default(0)
+  people         Int
+  planId         Int?
+  planCode       String?
+  planName       String?
+  baseAmount     Decimal  @db.Decimal(10, 2)
+  extrasAmount   Decimal  @default(0) @db.Decimal(10, 2)
+  totalAmount    Decimal  @db.Decimal(10, 2)
+  advance        Decimal  @default(0) @db.Decimal(10, 2)
+  balance        Decimal  @db.Decimal(10, 2)
+  notes          String?
+  qrCode         String?  @unique
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  cancelledAt    DateTime?
+  checkedInAt    DateTime?
+  completedAt    DateTime?
+
+  client         Client   @relation(fields: [clientId], references: [id])
+  stay           Stay?    @relation(fields: [stayId], references: [id])
+  reservation    Reservation? @relation(fields: [reservationId], references: [id])
+  slot           ServiceSlot @relation(fields: [slotId], references: [id])
+  plan           ServicePlan? @relation(fields: [planId], references: [id])
+  extras         ServiceReservationExtra[]
+  payments       Payment[]
+  poolEntries    PoolEntry[]
+
+  @@index([clientId])
+  @@index([stayId])
+  @@index([serviceType])
+  @@index([status])
+  @@index([date])
+  @@index([slotId])
+}
+
+model ServiceReservationExtra {
+  id                   Int      @id @default(autoincrement())
+  serviceReservationId Int
+  serviceExtraId       Int
+  quantity             Int
+  unitPrice            Decimal  @db.Decimal(10, 2)
+  subtotal             Decimal  @db.Decimal(10, 2)
+
+  serviceReservation   ServiceReservation @relation(fields: [serviceReservationId], references: [id], onDelete: Cascade)
+  serviceExtra         ServiceExtra @relation(fields: [serviceExtraId], references: [id])
 }
 

@@ -17,6 +17,48 @@ export const menu = asyncHandler(async (req, res) => {
   res.json(data);
 });
 
+export const createPoolAccess = asyncHandler(async (req, res) => {
+  const data = await service.createPoolEntry(
+    req.client.id,
+    req.client.stayId,
+    req.client.reservationId,
+    req.body
+  );
+  res.status(201).json(data);
+});
+
+import { 
+  createServiceReservation as svcCreateSR,
+  getClientServiceReservations as svcGetSRs,
+  getClientServiceReservationById as svcGetSRById,
+  cancelServiceReservation as svcCancelSR
+} from "../services/service-reservation.service.js";
+
+export const createServiceReservation = asyncHandler(async (req, res) => {
+  const data = await svcCreateSR(
+    req.client.id,
+    req.client.stayId,
+    req.client.reservationId,
+    req.body
+  );
+  res.status(201).json(data);
+});
+
+export const listServiceReservations = asyncHandler(async (req, res) => {
+  const data = await svcGetSRs(req.client.id, req.client.stayId);
+  res.json(data);
+});
+
+export const getServiceReservationById = asyncHandler(async (req, res) => {
+  const data = await svcGetSRById(req.client.id, req.client.stayId, req.params.id);
+  res.json(data);
+});
+
+export const cancelServiceReservation = asyncHandler(async (req, res) => {
+  const data = await svcCancelSR(req.client.id, req.client.stayId, req.params.id);
+  res.json(data);
+});
+
 export const createOrder = asyncHandler(async (req, res) => {
   const data = await service.createClientOrder(
     req.client.id,

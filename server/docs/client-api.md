@@ -16,6 +16,19 @@ Retorna los tipos de habitaciones activos.
 Consulta habitaciones disponibles por fechas.
 - Query params: `checkIn`, `checkOut`, `guests`, `typeId` (opcional).
 
+### `GET /api/public/services`
+Lista de servicios adicionales (Piscina, Mirador) disponibles.
+
+### `GET /api/public/services/:type/availability`
+Consulta disponibilidad real por día. Query param: `date`.
+
+### `GET /api/public/services/:type/plans`
+Lista de planes/tarifas para el servicio.
+
+### `GET /api/public/services/:type/extras`
+Lista de extras opcionales para el servicio.
+- Query params: `checkIn`, `checkOut`, `guests`, `typeId` (opcional).
+
 ### `POST /api/public/reservations`
 Crea una reserva desde la web pública.
 
@@ -161,18 +174,35 @@ Detalle del evento. Valida ownership.
 
 ---
 
-## 6. Piscina y Mirador
+## 6. Piscina y Mirador (Reservas de Servicios)
 
-### `POST /api/client/pool`
-**NO DISPONIBLE / PENDIENTE ESTRUCTURAL.** 
-Actualmente el modelo `PoolEntry` no soporta un estado `PENDIENTE` para que un huésped se autogestione sin validación de personal, la creación directa como `ACTIVO` salta los controles de capacidad e inspección de recepción.
-Se sugiere crear un modelo `PoolRequest` o usar un `OperationalReport` para este fin.
+### `GET /api/client/service-reservations`
+Lista todas las reservas de servicios asociadas a la estadía del huésped.
 
-### Mirador
-**NO DISPONIBLE / PENDIENTE ESTRUCTURAL.**
-No existe un modelo específico ni una entidad en `EventSpace` para gestionar la reserva de "Mirador" bajo la lógica actual del hotel.
+### `GET /api/client/service-reservations/:id`
+Detalle de la reserva, incluyendo QR y desgloses.
 
----
+### `POST /api/client/service-reservations`
+Crea una reserva de servicio (Piscina o Mirador). Protegido contra sobreventa (Transacciones concurrentes).
+
+**Payload:**
+```json
+{
+  "serviceType": "PISCINA",
+  "date": "2026-08-25T00:00:00.000Z",
+  "slotId": 1,
+  "planId": 1,
+  "adults": 2,
+  "children": 1,
+  "extras": [
+    { "id": 1, "quantity": 2 }
+  ],
+  "notes": "Necesitamos toallas extras"
+}
+```
+
+### `PATCH /api/client/service-reservations/:id/cancel`
+Cancela la reserva siempre y cuando su estado sea `PENDIENTE` o `CONFIRMADA`.
 
 ## 7. Socket.IO (Tiempo Real)
 
@@ -195,8 +225,9 @@ Al validarse el token, el servidor une al socket a una habitación (room) llamad
 
 **Eventos Escuchables:**
 - `order:status_updated`
+- `service-reservation:updated`
 
-**Payload Emitido:**
+**Payload Emitido (`order:status_updated`):**
 ```json
 {
   "orderId": 123,
