@@ -38,7 +38,7 @@ import {
 } from "../services/service-reservation.service.js";
 
 export const checkInReservation = asyncHandler(async (req, res) => {
-  const data = await checkInSR(req.params.id, req.user, "PISCINA");
+  const data = await checkInSR(req.params.id, req.user, "PISCINA", req.body?.qrCode);
   res.json(data);
 });
 

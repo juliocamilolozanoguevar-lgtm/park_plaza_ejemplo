@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import { PaymentMethod, Prisma } from "@prisma/client";
 import { randomBytes, randomUUID } from "node:crypto";
 import { prisma } from "../config/prisma.js";
 import { emitToStay } from "../socket.js";
@@ -7,6 +7,7 @@ import { HttpError, notFound } from "../utils/httpError.js";
 const SERVICE_TYPES = ["PISCINA", "MIRADOR"];
 const OCCUPYING_STATUSES = ["PENDIENTE", "CONFIRMADA", "EN_USO"];
 const AVAILABILITY_WINDOW_DAYS = 21;
+const PAYMENT_METHODS = new Set(Object.values(PaymentMethod));
 
 function toMoney(value) {
   return new Prisma.Decimal(value || 0).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
@@ -21,6 +22,12 @@ function toInt(value, field, { min = 0 } = {}) {
 function assertServiceType(type) {
   const normalized = String(type || "").toUpperCase();
   if (!SERVICE_TYPES.includes(normalized)) throw new HttpError(422, "Servicio no valido.");
+  return normalized;
+}
+
+function assertPaymentMethod(method) {
+  const normalized = String(method || "EFECTIVO").toUpperCase();
+  if (!PAYMENT_METHODS.has(normalized)) throw new HttpError(422, "Metodo de pago no valido.");
   return normalized;
 }
 
@@ -272,7 +279,7 @@ async function resolveReservationPayload(tx, data) {
   const date = dateFromLimaDay(dateString);
   const adults = toInt(data.adults || 0, "Adultos", { min: 0 });
   const children = toInt(data.children || 0, "Ninos", { min: 0 });
-  const people = data.people !== undefined ? toInt(data.people, "Personas", { min: 1 }) : adults + children;
+  const people = adults + children;
   if (people <= 0) throw new HttpError(422, "Debe indicar cantidad de personas.");
 
   const slot = await tx.serviceSlot.findUnique({ where: { id: Number(data.slotId) } });
@@ -411,6 +418,7 @@ export async function cancelServiceReservation(clientId, stayId, id) {
 }
 
 export async function payServiceReservation(clientId, stayId, id, data = {}) {
+  const method = assertPaymentMethod(data.method);
   const result = await prisma.$transaction(async (tx) => {
     const reservation = await tx.serviceReservation.findFirst({
       where: clientOwnershipWhere(clientId, stayId, id),
@@ -437,7 +445,7 @@ export async function payServiceReservation(clientId, stayId, id, data = {}) {
         reservationId: reservation.reservationId,
         stayId: reservation.stayId,
         serviceReservationId: reservation.id,
-        method: data.method || "EFECTIVO",
+        method,
         reference: data.reference || null,
         status: "REGISTRADO",
         area: reservation.serviceType,
@@ -470,7 +478,7 @@ async function assertCheckInWindow(reservation, slot) {
   if (nowMinutes < start || nowMinutes > end) throw new HttpError(422, "La reserva no esta dentro del horario permitido.");
 }
 
-export async function checkInServiceReservation(id, user, expectedType = null) {
+export async function checkInServiceReservation(id, user, expectedType = null, qrCode = null) {
   const result = await prisma.$transaction(async (tx) => {
     const reservation = await tx.serviceReservation.findUnique({
       where: { id: Number(id) },
@@ -481,6 +489,8 @@ export async function checkInServiceReservation(id, user, expectedType = null) {
     if (reservation.serviceType !== serviceType) throw new HttpError(422, `La reserva no pertenece a ${serviceType}.`);
     if (reservation.status !== "CONFIRMADA") throw new HttpError(422, `No se puede hacer check-in. Estado actual: ${reservation.status}.`);
     if (!reservation.qrCode) throw new HttpError(422, "La reserva no tiene QR valido.");
+    if (!qrCode) throw new HttpError(422, "QR requerido para check-in.");
+    if (String(qrCode) !== reservation.qrCode) throw new HttpError(422, "QR invalido para la reserva.");
     if (reservation.checkedInAt) throw new HttpError(422, "La reserva ya tiene check-in registrado.");
     await assertCheckInWindow(reservation, reservation.slot);
 

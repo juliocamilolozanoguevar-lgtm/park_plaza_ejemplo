@@ -18,22 +18,33 @@ export async function authenticateClient(req, res, next) {
       throw new HttpError(401, "Token invalido para acceso de cliente.");
     }
 
-    const client = await prisma.client.findUnique({
-      where: { id: payload.clientId }
-    });
-
-    // Permitimos ACTIVO o HOSPEDADO
-    if (!client || (client.status !== "ACTIVO" && client.status !== "HOSPEDADO")) {
-      throw new HttpError(401, "Cliente no autorizado o inactivo.");
-    }
-
-    // Validar que la estadía del token siga activa
     const stay = await prisma.stay.findUnique({
-      where: { id: payload.stayId }
+      where: { id: Number(payload.stayId) },
+      include: {
+        client: true,
+        reservation: true
+      }
     });
 
     if (!stay || stay.status !== "ACTIVA") {
       throw new HttpError(401, "La estadía ya no se encuentra activa.");
+    }
+    if (stay.clientId !== Number(payload.clientId)) {
+      throw new HttpError(401, "Token invalido para la estadia.");
+    }
+
+    const client = stay.client;
+    if (!client || (client.status !== "ACTIVO" && client.status !== "HOSPEDADO")) {
+      throw new HttpError(401, "Cliente no autorizado o inactivo.");
+    }
+
+    if (
+      !stay.reservation ||
+      stay.reservation.id !== stay.reservationId ||
+      stay.reservation.clientId !== stay.clientId ||
+      stay.reservation.roomId !== stay.roomId
+    ) {
+      throw new HttpError(401, "Relacion de estadia invalida.");
     }
 
     req.client = {
@@ -41,9 +52,9 @@ export async function authenticateClient(req, res, next) {
       documentNumber: client.documentNumber,
       firstName: client.firstName,
       lastName: client.lastName,
-      reservationId: payload.reservationId,
-      stayId: payload.stayId,
-      roomId: payload.roomId
+      reservationId: stay.reservationId,
+      stayId: stay.id,
+      roomId: stay.roomId
     };
 
     next();

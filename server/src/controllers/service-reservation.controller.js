@@ -5,7 +5,7 @@ import {
 } from "../services/service-reservation.service.js";
 
 export const checkInMirador = asyncHandler(async (req, res) => {
-  const data = await checkInServiceReservation(req.params.id, req.user, "MIRADOR");
+  const data = await checkInServiceReservation(req.params.id, req.user, "MIRADOR", req.body?.qrCode);
   res.json(data);
 });
 

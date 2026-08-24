@@ -1,5 +1,8 @@
 import { PrismaClient } from "@prisma/client";
 import { readFile } from "node:fs/promises";
+import jwt from "jsonwebtoken";
+import { env } from "./src/config/env.js";
+import { authenticateClient } from "./src/middlewares/client-auth.js";
 import {
   cancelServiceReservation,
   checkInServiceReservation,
@@ -34,6 +37,18 @@ async function expectFail(fn, message, contains = "") {
     return error;
   }
   throw new Error(`${message}: debio fallar`);
+}
+
+async function runClientAuth(token) {
+  const req = { headers: { authorization: `Bearer ${token}` } };
+  await new Promise((resolve, reject) => {
+    authenticateClient(req, {}, (error) => (error ? reject(error) : resolve()));
+  });
+  return req.client;
+}
+
+function clientToken(payload) {
+  return jwt.sign({ role: "CLIENT", ...payload }, env.jwtSecret, { expiresIn: "1h" });
 }
 
 function limaDateString(date = new Date()) {
@@ -208,7 +223,7 @@ async function seedBase() {
   const poolInactive = await prisma.serviceExtra.create({ data: { serviceType: "PISCINA", name: `${PREFIX}Inactivo`, price: 5, active: false } });
   const miradorExtra = await prisma.serviceExtra.create({ data: { serviceType: "MIRADOR", name: `${PREFIX}Vino`, price: 12, active: true } });
 
-  return { user, clients, stays, externalClient, slots, plans, poolExtra, poolInactive, miradorExtra };
+  return { user, clients, stays, externalClient, room, slots, plans, poolExtra, poolInactive, miradorExtra };
 }
 
 async function createFor(ctx, clientIndex, payload) {
@@ -217,11 +232,76 @@ async function createFor(ctx, clientIndex, payload) {
   return createServiceReservation(client.id, stay.id, stay.reservationId, payload);
 }
 
+async function createAuthFixture(ctx, suffix, { clientStatus = "HOSPEDADO", stayStatus = "ACTIVA" } = {}) {
+  const client = await prisma.client.create({
+    data: {
+      documentType: "DNI",
+      documentNumber: `${PREFIX}AUTH${suffix}`,
+      firstName: `Auth${suffix}`,
+      lastName: "Servicio",
+      status: clientStatus
+    }
+  });
+  const reservation = await prisma.reservation.create({
+    data: {
+      code: `${PREFIX}AUTH_RSV_${suffix}`,
+      clientId: client.id,
+      roomId: ctx.room.id,
+      checkInDate: new Date(),
+      checkOutDate: new Date(Date.now() + 86400000),
+      adults: 1,
+      totalPrice: 100,
+      balance: 100,
+      status: stayStatus === "ACTIVA" ? "CHECKED_IN" : "COMPLETADA"
+    }
+  });
+  const stay = await prisma.stay.create({
+    data: {
+      reservationId: reservation.id,
+      clientId: client.id,
+      roomId: ctx.room.id,
+      status: stayStatus,
+      checkInAt: new Date(),
+      checkOutAt: stayStatus === "FINALIZADA" ? new Date() : null
+    }
+  });
+  return { client, reservation, stay };
+}
+
 async function main() {
   await cleanup();
   const ctx = await seedBase();
   const today = limaDateString();
   const tomorrow = addDays(1);
+
+  const validClient = await runClientAuth(clientToken({
+    clientId: ctx.clients[0].id,
+    stayId: ctx.stays[0].id,
+    reservationId: 999999,
+    roomId: 999999
+  }));
+  ok(validClient.id === ctx.clients[0].id && validClient.stayId === ctx.stays[0].id, "Auth CLIENT valido funciona");
+  ok(validClient.reservationId === ctx.stays[0].reservationId && validClient.roomId === ctx.stays[0].roomId, "JWT manipulado no altera relaciones DB");
+
+  const finalStayFixture = await createAuthFixture(ctx, "FINAL", { stayStatus: "FINALIZADA" });
+  await expectFail(() => runClientAuth(clientToken({
+    clientId: finalStayFixture.client.id,
+    stayId: finalStayFixture.stay.id
+  })), "Stay FINALIZADA falla");
+  await expectFail(() => runClientAuth(clientToken({
+    clientId: ctx.clients[1].id,
+    stayId: ctx.stays[0].id
+  })), "Payload clientId distinto al Stay falla");
+  await expectFail(() => runClientAuth(jwt.sign({
+    role: "ADMINISTRADOR",
+    clientId: ctx.clients[0].id,
+    stayId: ctx.stays[0].id
+  }, env.jwtSecret, { expiresIn: "1h" })), "Token de otro role falla");
+  const inactiveClientFixture = await createAuthFixture(ctx, "INACTIVE", { clientStatus: "INACTIVO" });
+  await expectFail(() => runClientAuth(clientToken({
+    clientId: inactiveClientFixture.client.id,
+    stayId: inactiveClientFixture.stay.id
+  })), "Cliente inactivo falla");
 
   ok((await getPublicServices()).length >= 2, "GET servicios");
   ok((await getServicePlans("PISCINA")).some((plan) => plan.code === `${PREFIX}ADU`), "GET planes Piscina");
@@ -268,7 +348,8 @@ async function main() {
     date: today,
     slotId: ctx.slots.MIRADOR_80.id,
     planId: ctx.plans[`${PREFIX}PER`].id,
-    people: 3
+    adults: 2,
+    children: 1
   });
   ok(miradorPerson.totalAmount === 45, "Reserva Mirador y precio PERSONA");
 
@@ -277,25 +358,44 @@ async function main() {
     date: today,
     slotId: ctx.slots.MIRADOR_80.id,
     planId: ctx.plans[`${PREFIX}FIJ`].id,
-    people: 4
+    adults: 2,
+    children: 2
   });
   ok(miradorFixed.totalAmount === 100, "Precio FIJO");
+
+  const spoofedPeople = await createFor(ctx, 2, {
+    serviceType: "MIRADOR",
+    date: addDays(4),
+    slotId: ctx.slots.MIRADOR_80.id,
+    planId: ctx.plans[`${PREFIX}PER`].id,
+    adults: 10,
+    children: 5,
+    people: 1
+  });
+  ok(spoofedPeople.people === 15 && spoofedPeople.totalAmount === 225, "Spoofing people ignorado en PERSONA");
 
   await expectFail(() => createFor(ctx, 0, {
     serviceType: "MIRADOR",
     date: today,
     slotId: ctx.slots.MIRADOR_80.id,
     planId: ctx.plans[`${PREFIX}ADU`].id,
-    people: 1
+    adults: 1
   }), "Plan cruzado falla");
   await expectFail(() => createFor(ctx, 0, {
     serviceType: "MIRADOR",
     date: today,
     slotId: ctx.slots.MIRADOR_80.id,
     planId: ctx.plans[`${PREFIX}PER`].id,
-    people: 1,
+    adults: 1,
     extras: [{ id: ctx.poolExtra.id, quantity: 1 }]
   }), "Extra cruzado falla");
+  await expectFail(() => createFor(ctx, 0, {
+    serviceType: "MIRADOR",
+    date: today,
+    slotId: ctx.slots.MIRADOR_80.id,
+    planId: ctx.plans[`${PREFIX}PER`].id,
+    people: 1
+  }), "Solo people sin adults/children falla");
   await expectFail(() => createFor(ctx, 0, {
     serviceType: "PISCINA",
     date: today,
@@ -350,7 +450,7 @@ async function main() {
     date: addDays(3),
     slotId: ctx.slots.MIRADOR_80.id,
     planId: ctx.plans[`${PREFIX}PER`].id,
-    people: 1
+    adults: 1
   });
   ok((await cancelServiceReservation(ctx.clients[3].id, ctx.stays[3].id, ownCancel.id)).status === "CANCELADA", "Cancelacion propia");
   await expectFail(() => cancelServiceReservation(ctx.clients[2].id, ctx.stays[2].id, poolAdult.id), "Cancelacion ajena falla");
@@ -360,18 +460,61 @@ async function main() {
   const confirmed = await payServiceReservation(ctx.clients[0].id, ctx.stays[0].id, poolAdult.id, { method: "YAPE", amount: 40, reference: `${PREFIX}PAY2` });
   ok(confirmed.status === "CONFIRMADA" && confirmed.balance === 0 && confirmed.qrCode, "Pago total pasa CONFIRMADA");
   await expectFail(() => payServiceReservation(ctx.clients[0].id, ctx.stays[0].id, poolAdult.id, { method: "YAPE", amount: 1 }), "Sobrepago falla");
-  await expectFail(() => checkInServiceReservation(poolChild.id, ctx.user, "PISCINA"), "QR pendiente no permite ingreso");
 
-  const checkedPool = await checkInServiceReservation(poolAdult.id, ctx.user, "PISCINA");
+  const validMethods = ["EFECTIVO", "TARJETA", "YAPE", "PLIN", "TRANSFERENCIA", "yape"];
+  for (const method of validMethods) {
+    const methodReservation = await createFor(ctx, 2, {
+      serviceType: "PISCINA",
+      date: addDays(6),
+      slotId: ctx.slots.PISCINA_80.id,
+      planId: ctx.plans[`${PREFIX}ADU`].id,
+      adults: 1
+    });
+    const paid = await payServiceReservation(ctx.clients[2].id, ctx.stays[2].id, methodReservation.id, {
+      method,
+      amount: 20,
+      reference: `${PREFIX}PAY_METHOD_${method}`
+    });
+    const payment = await prisma.payment.findFirst({ where: { serviceReservationId: methodReservation.id } });
+    ok(paid.status === "CONFIRMADA" && payment?.method === method.toUpperCase(), `Metodo ${method} valido`);
+  }
+  const invalidMethodReservation = await createFor(ctx, 2, {
+    serviceType: "PISCINA",
+    date: addDays(7),
+    slotId: ctx.slots.PISCINA_80.id,
+    planId: ctx.plans[`${PREFIX}ADU`].id,
+    adults: 1
+  });
+  const paymentsBeforeInvalidMethod = await prisma.payment.count({ where: { serviceReservationId: invalidMethodReservation.id } });
+  await expectFail(() => payServiceReservation(ctx.clients[2].id, ctx.stays[2].id, invalidMethodReservation.id, { method: "BITCOIN", amount: 20 }), "Metodo desconocido falla");
+  const paymentsAfterInvalidMethod = await prisma.payment.count({ where: { serviceReservationId: invalidMethodReservation.id } });
+  ok(paymentsAfterInvalidMethod === paymentsBeforeInvalidMethod, "Metodo invalido no crea Payment");
+
+  await expectFail(() => checkInServiceReservation(poolChild.id, ctx.user, "PISCINA", "NO_VALIDO"), "QR pendiente no permite ingreso");
+  await expectFail(() => checkInServiceReservation(poolAdult.id, ctx.user, "PISCINA"), "Check-in sin QR falla");
+  await expectFail(() => checkInServiceReservation(poolAdult.id, ctx.user, "PISCINA", "QR_INCORRECTO"), "Check-in con QR incorrecto falla");
+
+  const otherQrReservation = await createFor(ctx, 1, {
+    serviceType: "PISCINA",
+    date: today,
+    slotId: ctx.slots.PISCINA_80.id,
+    planId: ctx.plans[`${PREFIX}ADU`].id,
+    adults: 1
+  });
+  const otherQrConfirmed = await payServiceReservation(ctx.clients[1].id, ctx.stays[1].id, otherQrReservation.id, { method: "EFECTIVO", amount: 20, reference: `${PREFIX}PAY_QR_OTHER` });
+  await expectFail(() => checkInServiceReservation(poolAdult.id, ctx.user, "PISCINA", otherQrConfirmed.qrCode), "QR de otra reserva falla");
+
+  const checkedPool = await checkInServiceReservation(poolAdult.id, ctx.user, "PISCINA", confirmed.qrCode);
   ok(checkedPool.status === "EN_USO", "Piscina confirmada hace check-in");
   const poolEntry = await prisma.poolEntry.findFirst({ where: { serviceReservationId: poolAdult.id } });
   ok(poolEntry?.type === "HUESPED", "Huesped genera PoolEntry HUESPED");
-  await expectFail(() => checkInServiceReservation(poolAdult.id, ctx.user, "PISCINA"), "No doble check-in");
+  await expectFail(() => checkInServiceReservation(poolAdult.id, ctx.user, "PISCINA", confirmed.qrCode), "Mismo QR despues de check-in falla");
   const completedPool = await completeServiceReservation(poolAdult.id, "PISCINA");
   ok(completedPool.status === "FINALIZADA", "Complete Piscina");
   const finishedEntry = await prisma.poolEntry.findFirst({ where: { serviceReservationId: poolAdult.id } });
   ok(finishedEntry?.status === "FINALIZADO", "PoolEntry finaliza");
   await expectFail(() => completeServiceReservation(poolAdult.id, "PISCINA"), "No doble complete");
+  await expectFail(() => checkInServiceReservation(poolAdult.id, ctx.user, "PISCINA", confirmed.qrCode), "QR FINALIZADA falla");
   await expectFail(() => cancelServiceReservation(ctx.clients[0].id, ctx.stays[0].id, poolAdult.id), "Cancelacion EN_USO/FINALIZADA falla");
 
   const externalPool = await createServiceReservation(ctx.externalClient.id, null, null, {
@@ -381,14 +524,26 @@ async function main() {
     planId: ctx.plans[`${PREFIX}ADU`].id,
     adults: 1
   });
-  await payServiceReservation(ctx.externalClient.id, null, externalPool.id, { method: "EFECTIVO", amount: 20, reference: `${PREFIX}PAY_EXT` });
-  await checkInServiceReservation(externalPool.id, ctx.user, "PISCINA");
+  const externalConfirmed = await payServiceReservation(ctx.externalClient.id, null, externalPool.id, { method: "EFECTIVO", amount: 20, reference: `${PREFIX}PAY_EXT` });
+  await checkInServiceReservation(externalPool.id, ctx.user, "PISCINA", externalConfirmed.qrCode);
   const externalEntry = await prisma.poolEntry.findFirst({ where: { serviceReservationId: externalPool.id } });
   ok(externalEntry?.type === "CLIENTE_EXTERNO", "Externo genera PoolEntry CLIENTE_EXTERNO");
   await completeServiceReservation(externalPool.id, "PISCINA");
 
-  await payServiceReservation(ctx.clients[0].id, ctx.stays[0].id, miradorPerson.id, { method: "EFECTIVO", amount: 45, reference: `${PREFIX}PAY3` });
-  const checkedMirador = await checkInServiceReservation(miradorPerson.id, ctx.user, "MIRADOR");
+  const cancelConfirmed = await createFor(ctx, 3, {
+    serviceType: "PISCINA",
+    date: addDays(5),
+    slotId: ctx.slots.PISCINA_80.id,
+    planId: ctx.plans[`${PREFIX}ADU`].id,
+    adults: 1
+  });
+  const cancelPaid = await payServiceReservation(ctx.clients[3].id, ctx.stays[3].id, cancelConfirmed.id, { method: "EFECTIVO", amount: 20, reference: `${PREFIX}PAY_CANCEL` });
+  await cancelServiceReservation(ctx.clients[3].id, ctx.stays[3].id, cancelConfirmed.id);
+  await expectFail(() => checkInServiceReservation(cancelConfirmed.id, ctx.user, "PISCINA", cancelPaid.qrCode), "QR CANCELADA falla");
+
+  const paidMirador = await payServiceReservation(ctx.clients[0].id, ctx.stays[0].id, miradorPerson.id, { method: "EFECTIVO", amount: 45, reference: `${PREFIX}PAY3` });
+  await expectFail(() => checkInServiceReservation(miradorPerson.id, ctx.user, "MIRADOR", "QR_INCORRECTO"), "Mirador QR incorrecto falla");
+  const checkedMirador = await checkInServiceReservation(miradorPerson.id, ctx.user, "MIRADOR", paidMirador.qrCode);
   ok(checkedMirador.status === "EN_USO", "Check-in Mirador");
   ok(await prisma.poolEntry.count({ where: { serviceReservationId: miradorPerson.id } }) === 0, "Mirador NO crea PoolEntry");
   const completedMirador = await completeServiceReservation(miradorPerson.id, "MIRADOR");
