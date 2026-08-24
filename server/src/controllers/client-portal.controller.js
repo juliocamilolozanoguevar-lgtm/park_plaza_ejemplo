@@ -32,6 +32,11 @@ export const listOrders = asyncHandler(async (req, res) => {
   res.json(data);
 });
 
+export const getOrderById = asyncHandler(async (req, res) => {
+  const data = await service.getClientOrderById(req.client.id, req.client.stayId, Number(req.params.id));
+  res.json(data);
+});
+
 export const listConsumptions = asyncHandler(async (req, res) => {
   const data = await service.getClientConsumptions(req.client.stayId);
   res.json(data);
@@ -39,6 +44,16 @@ export const listConsumptions = asyncHandler(async (req, res) => {
 
 export const listEventSpaces = asyncHandler(async (req, res) => {
   const data = await service.getEventSpaces();
+  res.json(data);
+});
+
+export const listEvents = asyncHandler(async (req, res) => {
+  const data = await service.getClientEvents(req.client.id);
+  res.json(data);
+});
+
+export const getEventById = asyncHandler(async (req, res) => {
+  const data = await service.getClientEventById(req.client.id, Number(req.params.id));
   res.json(data);
 });
 

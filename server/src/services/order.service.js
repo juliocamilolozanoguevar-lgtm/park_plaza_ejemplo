@@ -89,7 +89,9 @@ export async function updateOrderStatus(id, status, userId) {
         emitToStay(result.stayId, "order:status_updated", {
           orderId: result.id,
           code: result.code,
-          status: result.status
+          status: result.status,
+          area: result.area,
+          updatedAt: result.updatedAt
         });
       }
       

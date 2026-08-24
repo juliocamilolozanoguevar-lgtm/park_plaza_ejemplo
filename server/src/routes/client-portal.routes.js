@@ -16,10 +16,13 @@ secure.get("/menu/:area", controller.menu);
 
 secure.post("/orders", controller.createOrder);
 secure.get("/orders", controller.listOrders);
+secure.get("/orders/:id", controller.getOrderById);
 
 secure.get("/consumptions", controller.listConsumptions);
 
 secure.get("/events/spaces", controller.listEventSpaces);
+secure.get("/events", controller.listEvents);
+secure.get("/events/:id", controller.getEventById);
 secure.post("/events", controller.createEvent);
 
 secure.post("/pool", controller.createPoolAccess);
