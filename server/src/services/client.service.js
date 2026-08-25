@@ -58,7 +58,17 @@ export async function getClient(id) {
   return client;
 }
 
-export function createClient(data) {
+export async function createClient(data) {
+  const existing = await prisma.client.findFirst({
+    where: {
+      OR: [
+        { documentNumber: String(data.documentNumber || '') },
+        ...(data.email ? [{ email: String(data.email) }] : [])
+      ]
+    }
+  });
+  if (existing) return existing;
+
   return prisma.client.create({
     data: {
       ...data,
@@ -87,3 +97,4 @@ export async function deleteClient(id) {
     data: { status: "INACTIVO" }
   });
 }
+
