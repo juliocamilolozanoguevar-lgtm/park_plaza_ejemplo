@@ -251,15 +251,26 @@ model Order {
 }
 
 model OrderItem {
-  id        Int      @id @default(autoincrement())
-  orderId   Int
-  productId Int?
-  name      String
-  category  String?
-  price     Decimal  @db.Decimal(10, 2)
-  quantity  Int
-  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  product   Product? @relation(fields: [productId], references: [id])
+  id                Int              @id @default(autoincrement())
+  orderId           Int
+  productId         Int?
+  menuItemId        Int?
+  menuItemVariantId Int?
+  quantity          Int
+  price             Decimal
+  subtotal          Decimal
+  notes             String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  
+  order             Order            @relation(fields: [orderId], references: [id])
+  product           Product?         @relation(fields: [productId], references: [id])
+  menuItem          MenuItem?        @relation(fields: [menuItemId], references: [id])
+  menuItemVariant   MenuItemVariant? @relation(fields: [menuItemVariantId], references: [id])
+
+  @@index([orderId])
+  @@index([productId])
+  @@index([menuItemId])
 }
 
 model Consumption {
@@ -1198,4 +1209,43 @@ model GuestRequest {
 
   @@index([clientId])
   @@index([stayId])
+}
+
+
+model MenuCategory {
+  id           Int        @id @default(autoincrement())
+  name         String
+  area         String
+  displayOrder Int        @default(0)
+  active       Boolean    @default(true)
+  items        MenuItem[]
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+}
+
+model MenuItem {
+  id           Int               @id @default(autoincrement())
+  categoryId   Int
+  name         String
+  description  String?
+  price        Decimal           @default(0)
+  image        String?
+  available    Boolean           @default(true)
+  active       Boolean           @default(true)
+  displayOrder Int               @default(0)
+  category     MenuCategory      @relation(fields: [categoryId], references: [id])
+  variants     MenuItemVariant[]
+  orderItems   OrderItem[]
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+}
+
+model MenuItemVariant {
+  id         Int         @id @default(autoincrement())
+  menuItemId Int
+  name       String
+  price      Decimal     @default(0)
+  active     Boolean     @default(true)
+  menuItem   MenuItem    @relation(fields: [menuItemId], references: [id])
+  orderItems OrderItem[]
 }
