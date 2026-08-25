@@ -1,4 +1,4 @@
-﻿
+
 import { Prisma } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import { prisma } from "../config/prisma.js";
@@ -348,11 +348,16 @@ export async function getPublicReservation(code, documentNumber) {
   return publicReservation(reservation);
 }
 
-export async function recoverPublicReservations(documentNumber) {
-  if (!documentNumber) throw new HttpError(422, "Documento obligatorio.");
+export async function recoverPublicReservations(identifier) {
+  if (!identifier) throw new HttpError(422, "Documento o correo obligatorio.");
 
-  const client = await prisma.client.findUnique({
-    where: { documentNumber: String(documentNumber) },
+  const client = await prisma.client.findFirst({
+    where: {
+      OR: [
+        { documentNumber: String(identifier) },
+        { email: String(identifier) }
+      ]
+    },
     include: {
       reservations: {
         where: { status: { notIn: ["CANCELADA", "NO_SHOW"] } },
@@ -404,3 +409,4 @@ export async function recoverPublicReservations(documentNumber) {
     }))
   };
 }
+
