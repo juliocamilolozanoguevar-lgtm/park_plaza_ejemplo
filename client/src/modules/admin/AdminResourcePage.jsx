@@ -4,10 +4,9 @@ import { BedDouble, CalendarCheck, Car, ChefHat, ClipboardCheck, CreditCard, Log
 import { EmptyState } from "../../components/EmptyState";
 import { LoadingSpinner } from "../../components/LoadingSpinner";
 import { StatusBadge } from "../../components/StatusBadge";
-import { Table } from "../../components/Table";
 import { useFetch } from "../../hooks/useFetch";
 import { api } from "../../services/api";
-import { Button, Input, PageHeader, Select, Tabs } from "../../components/ui";
+import { Button, Input, PageHeader, Select, Tabs, AdminTable, AdminTableHead, AdminTableRow, AdminTableHeaderCell, AdminTableCell } from "../../components/ui";
 import { useAuth } from "../../context/AuthContext";
 
 function formatDate(value) {
@@ -24,10 +23,15 @@ function clientName(client) {
   return client ? `${client.firstName || ""} ${client.lastName || ""}`.trim() : "-";
 }
 
+function orderClientLabel(order) {
+  return clientName(order.client || order.stay?.client);
+}
+
 function paymentContext(item) {
   if (item.stay?.room?.number) return `Estadia hab. ${item.stay.room.number}`;
   if (item.reservation?.room?.number) return `Reserva ${item.reservation.code || ""} hab. ${item.reservation.room.number}`.trim();
   if (item.event?.name) return `Evento ${item.event.name}`;
+  if (item.serviceReservation?.code) return `${item.serviceReservation.serviceType} ${item.serviceReservation.code}`;
   return "Pago manual";
 }
 
@@ -53,9 +57,13 @@ function rowSearchText(type, item) {
       item.code,
       item.area,
       item.status,
+      item.client?.firstName,
+      item.client?.lastName,
+      item.client?.documentNumber,
       item.stay?.client?.firstName,
       item.stay?.client?.lastName,
       item.stay?.client?.documentNumber,
+      item.room?.number,
       item.stay?.room?.number
     ].join(" ");
   }
@@ -172,7 +180,7 @@ function nextOrderStatus(order) {
   return flow[order.status] || null;
 }
 
-function buildReceivables(reservations = [], stays = [], events = []) {
+function buildReceivables(reservations = [], stays = [], events = [], serviceReservations = []) {
   const reservationItems = (Array.isArray(reservations) ? reservations : [])
     .filter((reservation) => Number(reservation.balance || 0) > 0 && !["CANCELADA", "NO_SHOW", "COMPLETADA"].includes(reservation.status))
     .map((reservation) => ({
@@ -232,7 +240,25 @@ function buildReceivables(reservations = [], stays = [], events = []) {
       }
     }));
 
-  return [...stayItems, ...reservationItems, ...eventItems].sort((a, b) => b.balance - a.balance).slice(0, 8);
+  const serviceItems = (Array.isArray(serviceReservations) ? serviceReservations : [])
+    .filter((reservation) => Number(reservation.balance || 0) > 0 && !["CANCELADA", "FINALIZADA"].includes(reservation.status))
+    .map((reservation) => ({
+      key: `service-${reservation.id}`,
+      origin: "Servicio",
+      client: clientName(reservation.client),
+      document: reservation.client?.documentNumber || "-",
+      operation: `${reservation.code} - ${reservation.serviceType}`,
+      balance: Number(reservation.balance || 0),
+      payload: {
+        clientId: reservation.clientId,
+        serviceReservationId: reservation.id,
+        area: reservation.serviceType,
+        concept: `Pago reserva ${reservation.serviceType.toLowerCase()} ${reservation.code}`,
+        amount: Number(reservation.balance || 0).toFixed(2)
+      }
+    }));
+
+  return [...stayItems, ...reservationItems, ...serviceItems, ...eventItems].sort((a, b) => b.balance - a.balance).slice(0, 12);
 }
 
 function buildInvoiceCandidates(payments = []) {
@@ -271,7 +297,7 @@ const configs = {
     description: "Pedidos y consumos operativos registrados por areas.",
     endpoint: "/orders",
     columns: ["Codigo", "Cliente", "Habitacion", "Area", "Estado", "Total"],
-    row: (item) => [item.code, item.stay?.client ? `${item.stay.client.firstName} ${item.stay.client.lastName}` : "-", item.stay?.room?.number || item.roomId || "-", item.area, <StatusBadge value={item.status} />, money(item.total)]
+    row: (item) => [item.code, orderClientLabel(item), item.stay?.room?.number || item.room?.number || item.roomId || "-", item.area, <StatusBadge value={item.status} />, money(item.total)]
   },
   cochera: {
     title: "Cochera",
@@ -384,6 +410,7 @@ export function AdminResourcePage({ type }) {
   const { data: reservationsData, reload: reloadReservations } = useFetch("/reservations", { initialData: [], enabled: type === "pagos" });
   const { data: staysData, reload: reloadStays } = useFetch("/checkout/stays", { initialData: [], enabled: type === "pagos" });
   const { data: eventsData, reload: reloadEvents } = useFetch("/events", { initialData: [], enabled: type === "pagos" });
+  const { data: serviceReservationsData, reload: reloadServiceReservations } = useFetch("/service-reservations", { initialData: [], enabled: type === "pagos" });
   const { data: paymentsData, reload: reloadPaymentsForInvoices } = useFetch("/pagos", { initialData: [], enabled: type === "facturacion" });
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
@@ -402,7 +429,7 @@ export function AdminResourcePage({ type }) {
   const filterOptions = resourceFilterOptions(type, rows);
   const scopedRows = type === "consumos" && consumptionSection !== "RESUMEN" ? rows.filter((item) => item.area === consumptionSection) : rows;
   const visibleRows = filterableResources.includes(type) ? filterResourceRows(type, scopedRows, search, resourceFilter) : scopedRows;
-  const receivables = type === "pagos" ? buildReceivables(reservationsData, staysData, eventsData) : [];
+  const receivables = type === "pagos" ? buildReceivables(reservationsData, staysData, eventsData, serviceReservationsData) : [];
   const invoiceCandidates = type === "facturacion" ? buildInvoiceCandidates(paymentsData) : [];
   const context = {
     parkingSpaces: type === "cochera" ? rows : [],
@@ -422,7 +449,7 @@ export function AdminResourcePage({ type }) {
       await api(path, { method, body: payload });
       await reload();
       if (type === "pagos") {
-        await Promise.all([reloadReservations(), reloadStays(), reloadEvents()]);
+        await Promise.all([reloadReservations(), reloadStays(), reloadEvents(), reloadServiceReservations()]);
       }
       if (type === "facturacion") {
         await reloadPaymentsForInvoices();
@@ -509,7 +536,7 @@ export function AdminResourcePage({ type }) {
           </section>
           
           <div className="grid gap-6 xl:grid-cols-2 items-start">
-            <ReceivablesPanel items={receivables} />
+            <ReceivablesPanel items={receivables} canCreate={canCreate} onSelect={(item) => setFormPrefill({ ...item.payload, method: "EFECTIVO" })} />
             
             <section className="rounded-card border border-park-border bg-white p-5 shadow-card">
               <div className="mb-4 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -536,17 +563,18 @@ export function AdminResourcePage({ type }) {
               </div>
               
               {visibleRows.length ? (
-                <div className="overflow-x-auto">
-                  <Table
-                    columns={config.columns}
-                    rows={visibleRows}
-                    renderRow={(item) => (
-                      <tr key={item.id} className="border-b border-park-border/50 hover:bg-park-bg/50 text-sm">
-                        {config.row(item).map((cell, index) => <td className="px-4 py-3 text-park-muted" key={index}>{cell}</td>)}
-                      </tr>
-                    )}
-                  />
-                </div>
+                <AdminTable>
+                  <AdminTableHead>
+                    {config.columns.map((col, idx) => <AdminTableHeaderCell key={idx}>{col}</AdminTableHeaderCell>)}
+                  </AdminTableHead>
+                  <tbody>
+                    {visibleRows.map((item) => (
+                      <AdminTableRow key={item.id}>
+                        {config.row(item).map((cell, index) => <AdminTableCell key={index}>{cell}</AdminTableCell>)}
+                      </AdminTableRow>
+                    ))}
+                  </tbody>
+                </AdminTable>
               ) : (
                 <EmptyState title="Sin movimientos de pago" description="No hay pagos que coincidan con los filtros actuales." />
               )}
@@ -565,36 +593,41 @@ export function AdminResourcePage({ type }) {
         canCreate ? <ResourceForm type={type} onSubmit={handleSubmit} saving={saving} context={context} prefill={formPrefill} /> : null
       ) : null}
       {type !== "configuracion" && type !== "pagos" && visibleRows.length ? (
-        <Table
-          columns={["consumos", "cochera", "compras"].includes(type) ? [...config.columns, "Acciones"] : config.columns}
-          rows={visibleRows}
-          renderRow={(item) => (
-            <tr key={item.id}>
-              {config.row(item).map((cell, index) => <td className="px-4 py-3" key={index}>{cell}</td>)}
-              {type === "cochera" ? (
-                <td className="px-4 py-3">
-                  {canEdit && item.entries?.[0] ? <Button disabled={saving} onClick={() => handleAction("vehicleExit", item)} size="sm" variant="secondary">Registrar salida</Button> : "-"}
-                </td>
-              ) : null}
-              {type === "consumos" ? (
-                <td className="px-4 py-3">
-                  {canEdit && nextOrderStatus(item) ? (
-                    <Button disabled={saving} onClick={() => handleAction("orderStatus", item)} size="sm" variant={nextOrderStatus(item) === "ENTREGADO" ? "gold" : "secondary"}>
-                      Pasar a {nextOrderStatus(item).replaceAll("_", " ")}
-                    </Button>
-                  ) : (
-                    <StatusBadge value={item.status} />
-                  )}
-                </td>
-              ) : null}
-              {type === "compras" ? (
-                <td className="px-4 py-3">
-                  {canEdit && item.status !== "RECIBIDA" ? <Button disabled={saving} onClick={() => handleAction("receivePurchase", item)} size="sm" variant="gold">Recibir</Button> : <StatusBadge value={item.status === "RECIBIDA" ? "RECIBIDA" : item.status} />}
-                </td>
-              ) : null}
-            </tr>
-          )}
-        />
+        <AdminTable>
+          <AdminTableHead>
+            {(["consumos", "cochera", "compras"].includes(type) ? [...config.columns, "Acciones"] : config.columns).map((col, idx) => (
+              <AdminTableHeaderCell key={idx}>{col}</AdminTableHeaderCell>
+            ))}
+          </AdminTableHead>
+          <tbody>
+            {visibleRows.map((item) => (
+              <AdminTableRow key={item.id}>
+                {config.row(item).map((cell, index) => <AdminTableCell key={index}>{cell}</AdminTableCell>)}
+                {type === "cochera" ? (
+                  <AdminTableCell>
+                    {canEdit && item.entries?.[0] ? <Button disabled={saving} onClick={() => handleAction("vehicleExit", item)} size="sm" variant="secondary">Registrar salida</Button> : "-"}
+                  </AdminTableCell>
+                ) : null}
+                {type === "consumos" ? (
+                  <AdminTableCell>
+                    {canEdit && nextOrderStatus(item) ? (
+                      <Button disabled={saving} onClick={() => handleAction("orderStatus", item)} size="sm" variant={nextOrderStatus(item) === "ENTREGADO" ? "gold" : "secondary"}>
+                        Pasar a {nextOrderStatus(item).replaceAll("_", " ")}
+                      </Button>
+                    ) : (
+                      <StatusBadge value={item.status} />
+                    )}
+                  </AdminTableCell>
+                ) : null}
+                {type === "compras" ? (
+                  <AdminTableCell>
+                    {canEdit && item.status !== "RECIBIDA" ? <Button disabled={saving} onClick={() => handleAction("receivePurchase", item)} size="sm" variant="gold">Recibir</Button> : <StatusBadge value={item.status === "RECIBIDA" ? "RECIBIDA" : item.status} />}
+                  </AdminTableCell>
+                ) : null}
+              </AdminTableRow>
+            ))}
+          </tbody>
+        </AdminTable>
       ) : type !== "configuracion" && type !== "pagos" ? (
         <EmptyState title={`Sin registros en ${config.title}`} description={rows.length ? "No hay resultados con los filtros actuales." : "Cuando existan datos en PostgreSQL apareceran en esta vista."} />
       ) : null}
@@ -659,17 +692,19 @@ function ResourceForm({ type, onSubmit, saving, context, prefill }) {
               <option value="">Seleccionar</option>
               {context.products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}
             </Select>
-            <Input label="Cantidad" type="number" min="1" value={form.quantity} onChange={(event) => update("quantity", event.target.value)} required />
+            <Input label="Cantidad" type="number" min="0.0001" step="0.0001" value={form.quantity} onChange={(event) => update("quantity", event.target.value)} required />
             <Input label="Costo" type="number" min="0" step="0.01" value={form.cost} onChange={(event) => update("cost", event.target.value)} required />
+            <Input label="Codigo lote proveedor" value={form.supplierLotCode} onChange={(event) => update("supplierLotCode", event.target.value)} />
+            <Input label="Vencimiento" type="date" value={form.expiresAt} onChange={(event) => update("expiresAt", event.target.value)} />
           </>
         ) : null}
         {type === "pagos" || type === "caja" ? (
           <>
-            {type === "pagos" && (form.reservationId || form.stayId || form.eventId) ? (
+            {type === "pagos" && (form.reservationId || form.stayId || form.eventId || form.serviceReservationId) ? (
               <div className="rounded-card border border-park-border bg-park-bg p-3 text-sm md:col-span-2 xl:col-span-4">
                 <span className="font-black text-park-dark">Operacion vinculada</span>
                 <p className="mt-1 text-park-muted">
-                  {form.stayId ? `Estadia #${form.stayId}` : form.reservationId ? `Reserva #${form.reservationId}` : `Evento #${form.eventId}`}
+                  {form.stayId ? `Estadia #${form.stayId}` : form.reservationId ? `Reserva #${form.reservationId}` : form.serviceReservationId ? `Servicio #${form.serviceReservationId}` : `Evento #${form.eventId}`}
                 </p>
               </div>
             ) : null}
@@ -815,10 +850,10 @@ function SettingsPanel({ rows, onSubmit, saving }) {
   );
 }
 
-function ReceivablesPanel({ items }) {
+function ReceivablesPanel({ items, canCreate, onSelect }) {
   const [filter, setFilter] = useState("TODOS");
 
-  const origins = ["Reserva", "Estadia", "Evento"];
+  const origins = ["Reserva", "Estadia", "Servicio", "Evento"];
   const filteredItems = items.filter((item) => filter === "TODOS" || item.origin.toUpperCase() === filter.toUpperCase());
 
   return (
@@ -845,35 +880,39 @@ function ReceivablesPanel({ items }) {
           </div>
         </div>
         {filteredItems.length ? (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[600px] border-collapse text-left text-sm">
-              <thead>
-                <tr className="border-b border-park-border text-park-muted">
-                  <th className="px-4 py-3 font-semibold">TIPO</th>
-                  <th className="px-4 py-3 font-semibold">CLIENTE</th>
-                  <th className="px-4 py-3 font-semibold">REFERENCIA</th>
-                  <th className="px-4 py-3 font-semibold">CONCEPTO</th>
-                  <th className="px-4 py-3 font-semibold text-right">SALDO</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredItems.map((item) => (
-                  <tr className="border-b border-park-border/50 hover:bg-park-bg/50" key={item.key}>
-                    <td className="px-4 py-3">
-                      <span className="rounded-button bg-park-green-soft px-2 py-1 text-[10px] font-black uppercase tracking-wide text-park-green">{item.origin}</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <p className="font-semibold text-park-dark">{item.client}</p>
-                      <p className="text-xs text-park-muted">Doc. {item.document}</p>
-                    </td>
-                    <td className="px-4 py-3 text-park-muted">{item.operation}</td>
-                    <td className="px-4 py-3 text-park-muted">{item.payload?.concept || "-"}</td>
-                    <td className="px-4 py-3 text-right font-display font-semibold text-park-dark">{money(item.balance)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <AdminTable>
+            <AdminTableHead>
+              <AdminTableHeaderCell>TIPO</AdminTableHeaderCell>
+              <AdminTableHeaderCell>CLIENTE</AdminTableHeaderCell>
+              <AdminTableHeaderCell>REFERENCIA</AdminTableHeaderCell>
+              <AdminTableHeaderCell>CONCEPTO</AdminTableHeaderCell>
+              <AdminTableHeaderCell className="text-right">SALDO</AdminTableHeaderCell>
+              <AdminTableHeaderCell className="text-right">ACCION</AdminTableHeaderCell>
+            </AdminTableHead>
+            <tbody>
+              {filteredItems.map((item) => (
+                <AdminTableRow key={item.key}>
+                  <AdminTableCell>
+                    <span className="rounded-button bg-park-green-soft px-2 py-1 text-[10px] font-black uppercase tracking-wide text-park-green">{item.origin}</span>
+                  </AdminTableCell>
+                  <AdminTableCell>
+                    <p className="font-semibold text-park-dark">{item.client}</p>
+                    <p className="text-xs text-park-muted">Doc. {item.document}</p>
+                  </AdminTableCell>
+                  <AdminTableCell>{item.operation}</AdminTableCell>
+                  <AdminTableCell>{item.payload?.concept || "-"}</AdminTableCell>
+                  <AdminTableCell className="text-right font-display font-semibold text-park-dark">{money(item.balance)}</AdminTableCell>
+                  <AdminTableCell className="text-right">
+                    {canCreate ? (
+                      <Button size="sm" type="button" onClick={() => onSelect(item)}>
+                        Confirmar efectivo
+                      </Button>
+                    ) : "-"}
+                  </AdminTableCell>
+                </AdminTableRow>
+              ))}
+            </tbody>
+          </AdminTable>
         ) : (
           <EmptyState title="Sin saldos pendientes" description="No hay reservas, estadias o eventos con saldo por cobrar en este filtro." />
         )}
@@ -921,8 +960,8 @@ function defaultForm(type) {
   const forms = {
     cochera: { spaceId: "", plate: "", brand: "", model: "" },
     proveedores: { ruc: "", name: "", phone: "", email: "", status: "ACTIVO" },
-    compras: { supplierId: "", productId: "", quantity: "1", cost: "0" },
-    pagos: { clientId: "", reservationId: "", stayId: "", eventId: "", area: "RECEPCION", concept: "", method: "EFECTIVO", amount: "" },
+    compras: { supplierId: "", productId: "", quantity: "1", cost: "0", supplierLotCode: "", expiresAt: "" },
+    pagos: { clientId: "", reservationId: "", stayId: "", eventId: "", serviceReservationId: "", area: "RECEPCION", concept: "", method: "EFECTIVO", amount: "" },
     facturacion: { clientId: "", paymentId: "", type: "BOLETA", series: "B001", subtotal: "", tax: "", total: "" },
     caja: { type: "INGRESO", concept: "", method: "EFECTIVO", amount: "" },
     usuarios: { firstName: "", lastName: "", email: "", roleId: "", status: "ACTIVO" },
@@ -935,7 +974,7 @@ function normalizePayload(type, form) {
   if (type === "compras") {
     return {
       supplierId: form.supplierId,
-      items: [{ productId: form.productId, quantity: form.quantity, cost: form.cost }]
+      items: [{ productId: form.productId, quantity: form.quantity, cost: form.cost, supplierLotCode: form.supplierLotCode, expiresAt: form.expiresAt }]
     };
   }
   return form;

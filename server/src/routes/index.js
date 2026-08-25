@@ -1,4 +1,4 @@
-﻿import { Router } from "express";
+import { Router } from "express";
 import { authRoutes } from "./auth.routes.js";
 import { publicRoutes } from "./public.routes.js";
 import { dashboardRoutes } from "./dashboard.routes.js";
@@ -7,8 +7,10 @@ import { clientRoutes } from "./client.routes.js";
 import { roomRoutes } from "./room.routes.js";
 import { reservationRoutes } from "./reservation.routes.js";
 import { checkInRoutes, checkOutRoutes } from "./reception.routes.js";
+import { clientPortalRoutes } from "./client-portal.routes.js";
 import { createOrderRoutes } from "./order.routes.js";
 import { poolRoutes } from "./pool.routes.js";
+import { serviceReservationRoutes } from "./service-reservation.routes.js";
 import { cleaningRoutes } from "./cleaning.routes.js";
 import { eventRoutes } from "./event.routes.js";
 import { inventoryRoutes, productRoutes } from "./inventory.routes.js";
@@ -19,6 +21,9 @@ import { supplyRequestRoutes } from "./supply-request.routes.js";
 import { createBasicRoutes } from "./basic.routes.js";
 import { cashRoutes, invoiceRoutes, parkingRoutes, paymentRoutes, purchaseRoutes, roleRoutes, settingRoutes, supplierRoutes, userRoutes } from "./admin.routes.js";
 import { prisma } from "../config/prisma.js";
+import customerAuthRoutes from "./customer-auth.routes.js";
+import customerServicesRoutes from "./customer-services.routes.js";
+import guestRequestRoutes from "./guest-request.routes.js";
 
 export const apiRoutes = Router();
 
@@ -37,6 +42,13 @@ apiRoutes.use("/auth", authRoutes);
 apiRoutes.use("/dashboard", dashboardRoutes);
 apiRoutes.use("/clients", clientRoutes);
 apiRoutes.use("/clientes", clientRoutes);
+apiRoutes.use("/client", clientPortalRoutes);
+// --- Customer External Auth ---
+apiRoutes.use("/customer", customerAuthRoutes);
+// --- Customer B2C: Service Reservations (Piscina / Mirador) ---
+apiRoutes.use("/customer/service-reservations", customerServicesRoutes);
+// --- Guest Requests (Huesped con Stay activa) ---
+apiRoutes.use("/client/guest-requests", guestRequestRoutes);
 apiRoutes.use("/rooms", roomRoutes);
 apiRoutes.use("/habitaciones", roomRoutes);
 apiRoutes.use("/reservations", reservationRoutes);
@@ -50,6 +62,8 @@ apiRoutes.use("/bar", createOrderRoutes("BARTENDER", "BARTENDER"));
 apiRoutes.use("/bartender", createOrderRoutes("BARTENDER", "BARTENDER"));
 apiRoutes.use("/pool", poolRoutes);
 apiRoutes.use("/piscina", poolRoutes);
+apiRoutes.use("/service-reservations", serviceReservationRoutes);
+apiRoutes.use("/reservas-servicio", serviceReservationRoutes);
 apiRoutes.use("/events", eventRoutes);
 apiRoutes.use("/eventos", eventRoutes);
 apiRoutes.use("/parking", parkingRoutes);

@@ -1,4 +1,4 @@
-import dotenv from "dotenv";
+﻿import dotenv from "dotenv";
 
 dotenv.config();
 
@@ -29,5 +29,10 @@ export const env = {
   frontendUrls: (process.env.FRONTEND_URL || "http://localhost:5173,http://localhost:5500,http://localhost:8000")
     .split(",")
     .map((url) => url.trim())
-    .filter(Boolean)
+    .filter(Boolean),
+  nodeEnv: process.env.NODE_ENV || "development",
+  customerDevOtp: process.env.CUSTOMER_DEV_OTP || "123456",
+  otpProviderConfigured: Boolean(process.env.OTP_PROVIDER_URL && process.env.OTP_PROVIDER_KEY),
+  googleClientId: process.env.GOOGLE_CLIENT_ID,
+  firebaseProjectId: process.env.FIREBASE_PROJECT_ID || "parkplaza-3b1e7"
 };

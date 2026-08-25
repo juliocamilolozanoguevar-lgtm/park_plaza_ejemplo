@@ -1,8 +1,9 @@
-﻿
+
 import { Prisma } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import { prisma } from "../config/prisma.js";
 import { HttpError, notFound } from "../utils/httpError.js";
+import { formatServiceReservationDTO } from "./service-reservation.service.js";
 
 function parseDate(value, field) {
   const date = new Date(value);
@@ -86,6 +87,18 @@ export async function getHotelInfo() {
   };
 }
 
+function publicServiceReservation(reservation) {
+  const dto = formatServiceReservationDTO(reservation);
+  return {
+    ...dto,
+    serviceCode: dto.serviceType,
+    slot: dto.slot?.startTime || dto.slot,
+    total: dto.totalAmount,
+    paid: dto.advance,
+    paymentStatus: Number(dto.balance || 0) > 0 ? "PENDIENTE" : "PAGADO"
+  };
+}
+
 export async function listPublicRoomTypes() {
   const types = await prisma.roomType.findMany({ where: { active: true }, orderBy: { basePrice: "asc" } });
   return types.map((type) => ({
@@ -130,6 +143,60 @@ export async function listAvailableRooms(query = {}) {
     rooms: rooms.map((room) => ({ ...publicRoom(room), estimatedTotal: money(room.price) * nights }))
   };
 }
+
+export async function listPublicEventSpaces() {
+  const spaces = await prisma.eventSpace.findMany({
+    where: { active: true },
+    orderBy: { name: "asc" }
+  });
+  return spaces.map((space) => ({
+    id: space.id,
+    name: space.name,
+    capacity: space.capacity,
+    basePrice: money(space.basePrice),
+    available: true
+  }));
+}
+
+export async function createPublicClient(data = {}) {
+  if (!data.documentNumber || !data.firstName || !data.lastName) {
+    throw new HttpError(422, "Documento, nombres y apellidos son obligatorios.");
+  }
+
+  const client = await prisma.client.upsert({
+    where: { documentNumber: String(data.documentNumber) },
+    update: {
+      documentType: data.documentType || "DNI",
+      firstName: data.firstName,
+      lastName: data.lastName,
+      phone: data.phone || null,
+      email: data.email || null,
+      address: data.address || null,
+      status: "ACTIVO"
+    },
+    create: {
+      documentType: data.documentType || "DNI",
+      documentNumber: String(data.documentNumber),
+      firstName: data.firstName,
+      lastName: data.lastName,
+      phone: data.phone || null,
+      email: data.email || null,
+      address: data.address || null,
+      status: "ACTIVO"
+    }
+  });
+
+  return {
+    id: client.id,
+    documentType: client.documentType,
+    documentNumber: client.documentNumber,
+    firstName: client.firstName,
+    lastName: client.lastName,
+    phone: client.phone,
+    email: client.email
+  };
+}
+
 export async function createPublicReservation(data = {}) {
   const checkInDate = parseDate(data.checkInDate, "Fecha de entrada");
   const checkOutDate = parseDate(data.checkOutDate, "Fecha de salida");
@@ -220,12 +287,126 @@ export async function createPublicReservation(data = {}) {
 
   return publicReservation(reservation);
 }
+
+export async function createPublicEvent(data = {}) {
+  if (!data.documentNumber || !data.firstName || !data.lastName) {
+    throw new HttpError(422, "Primero registra los datos del titular.");
+  }
+  if (!data.spaceId || !data.name || !data.type || !data.startsAt || !data.guests) {
+    throw new HttpError(422, "Completa los datos principales del evento.");
+  }
+
+  const client = await createPublicClient(data);
+  const space = await prisma.eventSpace.findUnique({ where: { id: Number(data.spaceId) } });
+  if (!space || !space.active) throw notFound("Ambiente no disponible.");
+  if (Number(data.guests) > space.capacity) throw new HttpError(422, `La capacidad maxima del ambiente es ${space.capacity}.`);
+
+  const startsAt = new Date(data.startsAt);
+  const endsAt = data.endsAt ? new Date(data.endsAt) : new Date(startsAt.getTime() + 4 * 60 * 60 * 1000);
+  if (Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime())) throw new HttpError(422, "Fecha del evento invalida.");
+
+  const event = await prisma.event.create({
+    data: {
+      clientId: client.id,
+      spaceId: space.id,
+      name: data.name,
+      type: data.type,
+      startsAt,
+      endsAt,
+      guests: Number(data.guests),
+      price: 0,
+      advance: 0,
+      balance: 0,
+      status: "COTIZACION",
+      notes: data.notes || "Solicitado desde portal publico."
+    },
+    include: { space: true }
+  });
+
+  return {
+    id: event.id,
+    code: `EVT-${event.id}`,
+    name: event.name,
+    type: event.type,
+    startsAt: event.startsAt,
+    endsAt: event.endsAt,
+    guests: event.guests,
+    status: event.status,
+    price: money(event.price),
+    balance: money(event.balance),
+    space: { id: event.space.id, name: event.space.name },
+    notes: event.notes
+  };
+}
 export async function getPublicReservation(code, documentNumber) {
   if (!code || !documentNumber) throw new HttpError(422, "Codigo y documento son obligatorios.");
   const reservation = await prisma.reservation.findFirst({
-    where: { code, client: { documentNumber: String(documentNumber) } },
+    where: { code, status: { notIn: ["CANCELADA", "NO_SHOW"] }, client: { documentNumber: String(documentNumber) } },
     include: { client: true, room: { include: { type: true } }, payments: true }
   });
   if (!reservation) throw notFound("Reserva no encontrada.");
   return publicReservation(reservation);
 }
+
+export async function recoverPublicReservations(identifier) {
+  if (!identifier) throw new HttpError(422, "Documento o correo obligatorio.");
+
+  const client = await prisma.client.findFirst({
+    where: {
+      OR: [
+        { documentNumber: String(identifier) },
+        { email: String(identifier) }
+      ]
+    },
+    include: {
+      reservations: {
+        where: { status: { notIn: ["CANCELADA", "NO_SHOW"] } },
+        include: { room: { include: { type: true } }, payments: true },
+        orderBy: { createdAt: "desc" }
+      },
+      serviceReservations: {
+        include: {
+          slot: true,
+          plan: true,
+          extras: { include: { serviceExtra: true } }
+        },
+        orderBy: [{ date: "desc" }, { createdAt: "desc" }]
+      },
+      events: {
+        include: { space: true },
+        orderBy: { startsAt: "desc" }
+      }
+    }
+  });
+
+  if (!client) throw notFound("No encontramos reservas con ese documento.");
+
+  return {
+    client: {
+      id: client.id,
+      documentType: client.documentType,
+      documentNumber: client.documentNumber,
+      firstName: client.firstName,
+      lastName: client.lastName,
+      phone: client.phone,
+      email: client.email
+    },
+    reservations: client.reservations.map(publicReservation),
+    serviceReservations: client.serviceReservations.map(publicServiceReservation),
+    events: client.events.map((event) => ({
+      id: event.id,
+      code: `EVT-${event.id}`,
+      name: event.name,
+      type: event.type,
+      startsAt: event.startsAt,
+      endsAt: event.endsAt,
+      guests: event.guests,
+      status: event.status,
+      price: money(event.price),
+      balance: money(event.balance),
+      space: event.space ? { id: event.space.id, name: event.space.name } : null,
+      notes: event.notes
+    }))
+  };
+}
+

@@ -43,19 +43,21 @@ export function Login() {
           </p>
         </div>
         <form className="p-8 lg:p-12" onSubmit={submit}>
-          <p className="text-xs font-black uppercase text-park-green">Acceso seguro</p>
+          <p className="text-xs font-black uppercase text-park-accent">Acceso seguro</p>
           <h2 className="mt-2 text-3xl font-black text-park-dark">Iniciar sesion</h2>
           <label className="mt-8 block text-sm font-bold">
             Correo
-            <input className="mt-2 h-11 w-full rounded-lg border border-slate-200 px-3 outline-none focus:border-park-green focus:ring-4 focus:ring-emerald-100" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} type="email" />
+            <input className="mt-2 h-11 w-full rounded-lg border border-slate-200 px-3 outline-none focus:border-park-accent focus:ring-4 focus:ring-blue-100" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} type="email" />
           </label>
           <label className="mt-4 block text-sm font-bold">
             Contrasena
-            <input className="mt-2 h-11 w-full rounded-lg border border-slate-200 px-3 outline-none focus:border-park-green focus:ring-4 focus:ring-emerald-100" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} type="password" />
+            <input className="mt-2 h-11 w-full rounded-lg border border-slate-200 px-3 outline-none focus:border-park-accent focus:ring-4 focus:ring-blue-100" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} type="password" />
           </label>
-          {error ? <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm font-bold text-park-danger">{error}</p> : null}
-          <button className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-park-green px-4 py-3 font-black text-white hover:bg-park-dark" disabled={loading} type="submit">
-            <LogIn size={18} />
+          <div className="mt-4 min-h-[40px]">
+            {error ? <p className="rounded-lg bg-red-50 px-3 py-2 text-sm font-bold text-park-danger">{error}</p> : null}
+          </div>
+          <button className="mt-2 inline-flex w-full min-h-[52px] items-center justify-center gap-2 rounded-lg bg-park-accent px-4 py-3 font-black text-white hover:bg-park-accent/90 active:bg-park-accent/75 disabled:opacity-75 disabled:cursor-not-allowed transition-colors" disabled={loading} type="submit">
+            {loading ? <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" /> : <LogIn size={18} />}
             {loading ? "Ingresando..." : "Ingresar al ERP"}
           </button>
         </form>

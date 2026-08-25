@@ -1,7 +1,8 @@
 import bcrypt from "bcrypt";
+import { Prisma } from "@prisma/client";
 import { prisma } from "../config/prisma.js";
 import { HttpError, notFound } from "../utils/httpError.js";
-import { registerMovement } from "./inventory.service.js";
+import { recordInventoryEntry, resolvePurchaseLot, roundMoney, roundQty, withInventoryEntryTransaction } from "./inventory-entry.service.js";
 
 const money = (value) => Number(value || 0);
 
@@ -100,7 +101,7 @@ export function listPurchases() {
 export async function createPurchase(data, userId) {
   const items = data.items || [];
   if (!items.length) throw new HttpError(422, "La compra debe incluir al menos un producto.");
-  const total = items.reduce((sum, item) => sum + money(item.quantity) * money(item.cost), 0);
+  const total = items.reduce((sum, item) => sum.plus(roundQty(item.quantity).times(roundMoney(item.cost))), new Prisma.Decimal(0));
   return prisma.purchase.create({
     data: {
       supplierId: Number(data.supplierId),
@@ -110,8 +111,10 @@ export async function createPurchase(data, userId) {
       items: {
         create: items.map((item) => ({
           productId: Number(item.productId),
-          quantity: money(item.quantity),
-          cost: money(item.cost)
+          quantity: roundQty(item.quantity),
+          cost: roundMoney(item.cost),
+          expiresAt: item.expiresAt ? new Date(item.expiresAt) : null,
+          supplierLotCode: item.supplierLotCode || null
         }))
       }
     },
@@ -120,25 +123,31 @@ export async function createPurchase(data, userId) {
 }
 
 export async function receivePurchase(id, userId) {
-  const purchase = await prisma.purchase.findUnique({
-    where: { id },
-    include: { items: { include: { product: true } }, supplier: true }
-  });
-  if (!purchase) throw notFound("Compra no encontrada.");
-  if (purchase.status === "RECIBIDA") throw new HttpError(422, "La compra ya fue recibida.");
+  return withInventoryEntryTransaction(async (tx) => {
+    const purchase = await tx.purchase.findUnique({
+      where: { id },
+      include: { supplier: true, items: { include: { product: true } } }
+    });
+    if (!purchase) throw notFound("Compra no encontrada.");
+    if (purchase.status === "RECIBIDA") throw new HttpError(422, "La compra ya fue recibida.");
+    if (purchase.status === "CANCELADA") throw new HttpError(422, "La compra cancelada no puede recibirse.");
 
-  return prisma.$transaction(async (tx) => {
-      for (const item of purchase.items) {
-        await registerMovement("ENTRADA_COMPRA", {
-          productId: item.productId,
-          quantity: item.quantity,
-          cost: item.cost, // Updates Product.cost
-          unitCost: item.cost, // Records historical unitCost for movement
-          origin: "COMPRA",
-          reason: "Recepcion de compra",
-          reference: `COMPRA:${purchase.id}`
-        }, userId, tx);
-      }
+    for (const item of purchase.items) {
+      if (!item.product) throw notFound("Producto no encontrado.");
+      const lot = await resolvePurchaseLot(tx, purchase, item);
+      await recordInventoryEntry(tx, {
+        productId: item.productId,
+        lotId: lot.id,
+        quantity: item.quantity,
+        unitCost: item.cost,
+        type: "ENTRADA_COMPRA",
+        origin: "COMPRA",
+        reason: "Recepcion de compra",
+        reference: `COMPRA:${purchase.id}:ITEM:${item.id}`,
+        userId
+      });
+    }
+
     return tx.purchase.update({
       where: { id },
       data: { status: "RECIBIDA", receivedAt: new Date() },
@@ -149,7 +158,7 @@ export async function receivePurchase(id, userId) {
 
 export function listPayments() {
   return prisma.payment.findMany({
-    include: { client: true, reservation: { include: { room: true } }, stay: { include: { room: true } }, event: true, invoice: true },
+    include: { client: true, reservation: { include: { room: true } }, stay: { include: { room: true } }, event: true, serviceReservation: true, invoice: true },
     orderBy: { paidAt: "desc" },
     take: 200
   });
@@ -166,6 +175,7 @@ export async function createPayment(data, userId) {
         reservationId: data.reservationId ? Number(data.reservationId) : null,
         stayId: data.stayId ? Number(data.stayId) : null,
         eventId: data.eventId ? Number(data.eventId) : null,
+        serviceReservationId: data.serviceReservationId ? Number(data.serviceReservationId) : null,
         method: data.method,
         reference: data.reference || null,
         area: data.area,
@@ -174,6 +184,42 @@ export async function createPayment(data, userId) {
         createdById: userId
       }
     });
+    if (data.reservationId && !data.stayId) {
+      const reservation = await tx.reservation.findUnique({ where: { id: Number(data.reservationId) } });
+      if (reservation) {
+        if (amount > money(reservation.balance)) throw new HttpError(422, "El pago excede el saldo de la reserva.");
+        const nextAdvance = Math.min(money(reservation.totalPrice), money(reservation.advance) + amount);
+        const nextBalance = Math.max(0, money(reservation.totalPrice) - nextAdvance);
+        await tx.reservation.update({
+          where: { id: reservation.id },
+          data: { advance: nextAdvance, balance: nextBalance, status: nextBalance === 0 ? "CONFIRMADA" : reservation.status }
+        });
+      }
+    }
+    if (data.eventId) {
+      const event = await tx.event.findUnique({ where: { id: Number(data.eventId) } });
+      if (event) {
+        if (amount > money(event.balance)) throw new HttpError(422, "El pago excede el saldo del evento.");
+        const nextAdvance = Math.min(money(event.price), money(event.advance) + amount);
+        const nextBalance = Math.max(0, money(event.price) - nextAdvance);
+        await tx.event.update({
+          where: { id: event.id },
+          data: { advance: nextAdvance, balance: nextBalance, status: nextBalance === 0 ? "CONFIRMADO" : event.status }
+        });
+      }
+    }
+    if (data.serviceReservationId) {
+      const serviceReservation = await tx.serviceReservation.findUnique({ where: { id: Number(data.serviceReservationId) } });
+      if (serviceReservation) {
+        if (amount > money(serviceReservation.balance)) throw new HttpError(422, "El pago excede el saldo del servicio.");
+        const nextAdvance = Math.min(money(serviceReservation.totalAmount), money(serviceReservation.advance) + amount);
+        const nextBalance = Math.max(0, money(serviceReservation.totalAmount) - nextAdvance);
+        await tx.serviceReservation.update({
+          where: { id: serviceReservation.id },
+          data: { advance: nextAdvance, balance: nextBalance, status: nextBalance === 0 ? "CONFIRMADA" : serviceReservation.status }
+        });
+      }
+    }
     await tx.cashMovement.create({
       data: {
         cashRegisterId: openCash.id,

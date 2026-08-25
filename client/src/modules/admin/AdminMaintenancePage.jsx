@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import { EmptyState } from "../../components/EmptyState";
 import { LoadingSpinner } from "../../components/LoadingSpinner";
 import { StatusBadge } from "../../components/StatusBadge";
-import { Button, PageHeader } from "../../components/ui";
+import { Button, PageHeader, AdminTable, AdminTableHead, AdminTableRow, AdminTableHeaderCell, AdminTableCell, AdminMetricStrip, AdminDrawer } from "../../components/ui";
 import { useFetch } from "../../hooks/useFetch";
 import { ModuleNav } from "../../components/ui/ModuleNav";
 import { ImagePreview } from "../../components/ImagePreview";
@@ -45,13 +45,13 @@ function MaintenanceSummary({ reports, audits, onSelect }) {
 
   return (
     <>
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-        <Metric icon={Clock} label="Pendientes" tone="gold" value={pending.length} />
-        <Metric icon={Wrench} label="En reparacion" tone="blue" value={repair.length} />
-        <Metric icon={CheckCircle2} label="Finalizados hoy" tone="green" value={finishedToday.length} />
-        <Metric icon={AlertTriangle} label="Alta / critica" tone="red" value={high.length} />
-        <Metric icon={Camera} label="Evidencias pendientes" tone="purple" value={evidencePending.length} />
-      </section>
+      <AdminMetricStrip metrics={[
+        { label: "Pendientes", value: pending.length },
+        { label: "En reparacion", value: repair.length },
+        { label: "Finalizados hoy", value: finishedToday.length },
+        { label: "Alta / critica", value: high.length },
+        { label: "Evidencias pendientes", value: evidencePending.length }
+      ]} />
       <section className="grid gap-5 xl:grid-cols-[1.4fr_1fr]">
         <Panel title="Trabajos activos">
           <ReportsTable compact reports={reports.filter((item) => item.status !== "RESUELTO").slice(0, 6)} onSelect={onSelect} />
@@ -85,25 +85,32 @@ function ReportsTable({ reports, onSelect, compact = false }) {
   if (!reports.length) return <EmptyState title="Sin trabajos" description="No hay reportes tecnicos para esta vista." />;
   return (
     <section className={compact ? "" : "rounded-card border border-park-border bg-white p-5 shadow-card"}>
-      <div className="overflow-x-auto">
-        <table className="min-w-full text-left text-sm">
-          <thead className="text-xs uppercase text-park-muted"><tr><th className="py-3">Codigo</th><th>Ubicacion</th><th>Problema</th><th>Prioridad</th><th>Tecnico</th><th>Estado</th><th>Hora</th><th>Ver</th></tr></thead>
-          <tbody className="divide-y divide-park-border">
-            {reports.map((report) => (
-              <tr key={report.id}>
-                <td className="py-3 font-black text-park-black">{report.code}</td>
-                <td>{locationLabel(report)}</td>
-                <td>{report.description}</td>
-                <td><StatusBadge value={report.priority} /></td>
-                <td>{report.resolvedBy ? `${report.resolvedBy.firstName} ${report.resolvedBy.lastName}` : "Sin asignar"}</td>
-                <td><StatusBadge value={report.status} /></td>
-                <td>{formatDateTime(report.createdAt)}</td>
-                <td><Button className="h-8 w-8 px-0" icon={Eye} onClick={() => onSelect(report)} size="sm" type="button" variant="secondary" /></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <AdminTable>
+        <AdminTableHead>
+          <AdminTableHeaderCell>Codigo</AdminTableHeaderCell>
+          <AdminTableHeaderCell>Ubicacion</AdminTableHeaderCell>
+          <AdminTableHeaderCell>Problema</AdminTableHeaderCell>
+          <AdminTableHeaderCell>Prioridad</AdminTableHeaderCell>
+          <AdminTableHeaderCell>Tecnico</AdminTableHeaderCell>
+          <AdminTableHeaderCell>Estado</AdminTableHeaderCell>
+          <AdminTableHeaderCell>Hora</AdminTableHeaderCell>
+          <AdminTableHeaderCell>Ver</AdminTableHeaderCell>
+        </AdminTableHead>
+        <tbody>
+          {reports.map((report) => (
+            <AdminTableRow key={report.id} onClick={() => onSelect(report)}>
+              <AdminTableCell className="font-black text-park-black">{report.code}</AdminTableCell>
+              <AdminTableCell>{locationLabel(report)}</AdminTableCell>
+              <AdminTableCell>{report.description}</AdminTableCell>
+              <AdminTableCell><StatusBadge value={report.priority} /></AdminTableCell>
+              <AdminTableCell>{report.resolvedBy ? `${report.resolvedBy.firstName} ${report.resolvedBy.lastName}` : "Sin asignar"}</AdminTableCell>
+              <AdminTableCell><StatusBadge value={report.status} /></AdminTableCell>
+              <AdminTableCell>{formatDateTime(report.createdAt)}</AdminTableCell>
+              <AdminTableCell><Button className="h-8 w-8 px-0" icon={Eye} onClick={(event) => { event.stopPropagation(); onSelect(report); }} size="sm" type="button" variant="secondary" /></AdminTableCell>
+            </AdminTableRow>
+          ))}
+        </tbody>
+      </AdminTable>
     </section>
   );
 }
@@ -130,33 +137,24 @@ function EvidenceGrid({ reports, onSelect }) {
 
 function MaintenanceDetail({ report, onClose }) {
   return (
-    <div className="fixed inset-0 z-40 bg-slate-950/30 p-4">
-      <aside className="ml-auto h-full max-w-xl overflow-auto rounded-card bg-white p-5 shadow-drawer">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-xs font-black uppercase text-park-gold">Detalle del trabajo</p>
-            <h3 className="font-sans text-xl font-black text-park-black">{report.code}</h3>
-          </div>
-          <button className="grid h-9 w-9 place-items-center rounded-button border border-park-border text-park-muted hover:text-park-black" onClick={onClose} type="button"><X size={18} /></button>
-        </div>
-        <div className="mt-3 flex gap-2"><StatusBadge value={report.status} /><StatusBadge value={report.priority} /></div>
-        <Panel title="Informacion general">
-          <DetailRow label="Ubicacion" value={locationLabel(report)} />
-          <DetailRow label="Tipo" value={report.type?.replaceAll("_", " ")} />
-          <DetailRow label="Origen" value={report.area} />
-          <DetailRow label="Descripcion" value={report.description} />
-          <DetailRow label="Reportado por" value={report.reportedBy ? `${report.reportedBy.firstName} ${report.reportedBy.lastName}` : "No registrado"} />
-          <DetailRow label="Fecha" value={formatDateTime(report.createdAt)} />
-          <DetailRow label="Tecnico" value={report.resolvedBy ? `${report.resolvedBy.firstName} ${report.resolvedBy.lastName}` : "Sin asignar"} />
-        </Panel>
-        <Panel title="Evidencia inicial">
-          <div className="grid gap-2 md:grid-cols-2">{report.evidences?.length ? report.evidences.map((item) => <Thumb evidence={item} key={item.id} />) : <p className="text-sm text-park-muted">Sin evidencias adjuntas.</p>}</div>
-        </Panel>
-        <Panel title="Historial">
-          {historyFor(report).map((item) => <div className="flex gap-3 pb-3 last:pb-0" key={item}><span className="mt-1 h-2.5 w-2.5 rounded-full bg-park-green" /><p className="text-sm font-semibold text-park-black">{item}</p></div>)}
-        </Panel>
-      </aside>
-    </div>
+    <AdminDrawer open={true} onClose={onClose} title={report.code} width="w-full max-w-xl">
+      <div className="flex gap-2 mb-4"><StatusBadge value={report.status} /><StatusBadge value={report.priority} /></div>
+      <Panel title="Informacion general">
+        <DetailRow label="Ubicacion" value={locationLabel(report)} />
+        <DetailRow label="Tipo" value={report.type?.replaceAll("_", " ")} />
+        <DetailRow label="Origen" value={report.area} />
+        <DetailRow label="Descripcion" value={report.description} />
+        <DetailRow label="Reportado por" value={report.reportedBy ? `${report.reportedBy.firstName} ${report.reportedBy.lastName}` : "No registrado"} />
+        <DetailRow label="Fecha" value={formatDateTime(report.createdAt)} />
+        <DetailRow label="Tecnico" value={report.resolvedBy ? `${report.resolvedBy.firstName} ${report.resolvedBy.lastName}` : "Sin asignar"} />
+      </Panel>
+      <Panel title="Evidencia inicial">
+        <div className="grid gap-2 md:grid-cols-2">{report.evidences?.length ? report.evidences.map((item) => <Thumb evidence={item} key={item.id} />) : <p className="text-sm text-park-muted">Sin evidencias adjuntas.</p>}</div>
+      </Panel>
+      <Panel title="Historial">
+        {historyFor(report).map((item) => <div className="flex gap-3 pb-3 last:pb-0" key={item}><span className="mt-1 h-2.5 w-2.5 rounded-full bg-park-green" /><p className="text-sm font-semibold text-park-black">{item}</p></div>)}
+      </Panel>
+    </AdminDrawer>
   );
 }
 

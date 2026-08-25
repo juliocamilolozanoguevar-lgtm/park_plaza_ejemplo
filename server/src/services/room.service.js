@@ -62,12 +62,17 @@ export async function getRoomAvailability(roomId) {
   return {
     room,
     status: room.status,
-    available: !["MANTENIMIENTO", "FUERA_SERVICIO"].includes(room.status),
+    available: room.status === "LIBRE",
     reservations
   };
 }
 
 export async function checkRoomAvailability(roomId, checkIn, checkOut) {
+  const room = await prisma.room.findUnique({ where: { id: Number(roomId) } });
+  if (!room || room.status !== "LIBRE") {
+    return { available: false, message: "La habitacion no esta disponible." };
+  }
+
   const checkInDate = new Date(checkIn);
   const checkOutDate = new Date(checkOut);
 

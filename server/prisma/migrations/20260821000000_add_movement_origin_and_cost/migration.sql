@@ -1,11 +1,44 @@
-﻿-- CreateEnum
-CREATE TYPE "ReservationOrigin" AS ENUM ('WEB', 'RECEPCION', 'ADMIN');
+-- CreateEnum
+DO $$ BEGIN
+  CREATE TYPE "RoleName" AS ENUM ('ADMINISTRADOR', 'RECEPCIONISTA', 'RESTAURANTE', 'BARTENDER', 'PISCINA', 'LIMPIEZA', 'EVENTOS', 'MANTENIMIENTO');
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
 
 -- CreateEnum
-CREATE TYPE "AttendanceStatus" AS ENUM ('PRESENTE', 'FINALIZADA', 'REQUIERE_REVISION');
+DO $$ BEGIN
+  CREATE TYPE "UserStatus" AS ENUM ('ACTIVO', 'SUSPENDIDO', 'INACTIVO');
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
 
 -- CreateEnum
-CREATE TYPE "MovementOrigin" AS ENUM ('COMPRA', 'PEDIDO', 'PRODUCCION', 'MERMA', 'AJUSTE_MANUAL', 'ENTRADA_MANUAL', 'SALIDA_MANUAL', 'SOLICITUD_INSUMO', 'DANO', 'PERDIDA', 'OTRO');
+DO $$ BEGIN
+  CREATE TYPE "InventoryArea" AS ENUM ('RESTAURANTE', 'BARTENDER', 'LIMPIEZA', 'MANTENIMIENTO');
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
+-- CreateEnum
+DO $$ BEGIN
+  CREATE TYPE "ReservationOrigin" AS ENUM ('WEB', 'RECEPCION', 'ADMIN');
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
+-- CreateEnum
+DO $$ BEGIN
+  CREATE TYPE "AttendanceStatus" AS ENUM ('PRESENTE', 'FINALIZADA', 'REQUIERE_REVISION');
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
+-- CreateEnum
+DO $$ BEGIN
+  CREATE TYPE "MovementOrigin" AS ENUM ('COMPRA', 'PEDIDO', 'PRODUCCION', 'MERMA', 'AJUSTE_MANUAL', 'ENTRADA_MANUAL', 'SALIDA_MANUAL', 'SOLICITUD_INSUMO', 'DANO', 'PERDIDA', 'OTRO');
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
 
 -- AlterEnum
 -- This migration adds more than one value to an enum.
@@ -15,8 +48,8 @@ CREATE TYPE "MovementOrigin" AS ENUM ('COMPRA', 'PEDIDO', 'PRODUCCION', 'MERMA',
 -- the enum.
 
 
-ALTER TYPE "InventoryArea" ADD VALUE 'LIMPIEZA';
-ALTER TYPE "InventoryArea" ADD VALUE 'MANTENIMIENTO';
+ALTER TYPE "InventoryArea" ADD VALUE IF NOT EXISTS 'LIMPIEZA';
+ALTER TYPE "InventoryArea" ADD VALUE IF NOT EXISTS 'MANTENIMIENTO';
 
 -- AlterEnum
 -- This migration adds more than one value to an enum.
@@ -26,36 +59,41 @@ ALTER TYPE "InventoryArea" ADD VALUE 'MANTENIMIENTO';
 -- the enum.
 
 
-ALTER TYPE "RoleName" ADD VALUE 'EVENTOS';
-ALTER TYPE "RoleName" ADD VALUE 'MANTENIMIENTO';
+ALTER TYPE "RoleName" ADD VALUE IF NOT EXISTS 'EVENTOS';
+ALTER TYPE "RoleName" ADD VALUE IF NOT EXISTS 'MANTENIMIENTO';
 
 -- AlterEnum
-ALTER TYPE "UserStatus" ADD VALUE 'SUSPENDIDO';
+ALTER TYPE "UserStatus" ADD VALUE IF NOT EXISTS 'SUSPENDIDO';
 
 -- AlterTable
-ALTER TABLE "InventoryMovement" ADD COLUMN     "origin" "MovementOrigin",
-ADD COLUMN     "unitCost" DECIMAL(10,2);
+ALTER TABLE "InventoryMovement"
+ADD COLUMN IF NOT EXISTS "origin" "MovementOrigin",
+ADD COLUMN IF NOT EXISTS "unitCost" DECIMAL(10,2),
+ADD COLUMN IF NOT EXISTS "reference" TEXT,
+ADD COLUMN IF NOT EXISTS "createdById" INTEGER;
 
 -- AlterTable
-ALTER TABLE "OperationalReport" ADD COLUMN     "assignedToId" INTEGER,
-ADD COLUMN     "observations" TEXT,
-ADD COLUMN     "startedAt" TIMESTAMP(3),
-ADD COLUMN     "workDescription" TEXT;
+ALTER TABLE "OperationalReport"
+ADD COLUMN IF NOT EXISTS "assignedToId" INTEGER,
+ADD COLUMN IF NOT EXISTS "observations" TEXT,
+ADD COLUMN IF NOT EXISTS "startedAt" TIMESTAMP(3),
+ADD COLUMN IF NOT EXISTS "workDescription" TEXT;
 
 -- AlterTable
-ALTER TABLE "Reservation" ADD COLUMN     "origin" "ReservationOrigin" NOT NULL DEFAULT 'RECEPCION';
+ALTER TABLE "Reservation" ADD COLUMN IF NOT EXISTS "origin" "ReservationOrigin" NOT NULL DEFAULT 'RECEPCION';
 
 -- AlterTable
-ALTER TABLE "User" ADD COLUMN     "birthDate" TIMESTAMP(3),
-ADD COLUMN     "documentNumber" TEXT,
-ADD COLUMN     "hireDate" TIMESTAMP(3),
-ADD COLUMN     "phone" TEXT,
-ADD COLUMN     "photoUrl" TEXT,
-ADD COLUMN     "position" TEXT,
-ADD COLUMN     "username" TEXT;
+ALTER TABLE "User"
+ADD COLUMN IF NOT EXISTS "birthDate" TIMESTAMP(3),
+ADD COLUMN IF NOT EXISTS "documentNumber" TEXT,
+ADD COLUMN IF NOT EXISTS "hireDate" TIMESTAMP(3),
+ADD COLUMN IF NOT EXISTS "phone" TEXT,
+ADD COLUMN IF NOT EXISTS "photoUrl" TEXT,
+ADD COLUMN IF NOT EXISTS "position" TEXT,
+ADD COLUMN IF NOT EXISTS "username" TEXT;
 
 -- CreateTable
-CREATE TABLE "AttendanceRecord" (
+CREATE TABLE IF NOT EXISTS "AttendanceRecord" (
     "id" SERIAL NOT NULL,
     "userId" INTEGER NOT NULL,
     "checkInAt" TIMESTAMP(3) NOT NULL,
@@ -72,7 +110,7 @@ CREATE TABLE "AttendanceRecord" (
 );
 
 -- CreateTable
-CREATE TABLE "OrderStockReservation" (
+CREATE TABLE IF NOT EXISTS "OrderStockReservation" (
     "id" SERIAL NOT NULL,
     "orderId" INTEGER NOT NULL,
     "status" TEXT NOT NULL DEFAULT 'ACTIVA',
@@ -86,7 +124,7 @@ CREATE TABLE "OrderStockReservation" (
 );
 
 -- CreateTable
-CREATE TABLE "OrderStockReservationItem" (
+CREATE TABLE IF NOT EXISTS "OrderStockReservationItem" (
     "id" SERIAL NOT NULL,
     "reservationId" INTEGER NOT NULL,
     "productId" INTEGER NOT NULL,
@@ -98,7 +136,7 @@ CREATE TABLE "OrderStockReservationItem" (
 );
 
 -- CreateTable
-CREATE TABLE "ProductionBatch" (
+CREATE TABLE IF NOT EXISTS "ProductionBatch" (
     "id" SERIAL NOT NULL,
     "code" TEXT NOT NULL,
     "area" "InventoryArea" NOT NULL DEFAULT 'RESTAURANTE',
@@ -117,62 +155,75 @@ CREATE TABLE "ProductionBatch" (
 );
 
 -- CreateIndex
-CREATE INDEX "AttendanceRecord_userId_checkInAt_idx" ON "AttendanceRecord"("userId", "checkInAt");
+CREATE INDEX IF NOT EXISTS "AttendanceRecord_userId_checkInAt_idx" ON "AttendanceRecord"("userId", "checkInAt");
 
 -- CreateIndex
-CREATE INDEX "AttendanceRecord_status_idx" ON "AttendanceRecord"("status");
+CREATE INDEX IF NOT EXISTS "AttendanceRecord_status_idx" ON "AttendanceRecord"("status");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "OrderStockReservation_orderId_key" ON "OrderStockReservation"("orderId");
+CREATE UNIQUE INDEX IF NOT EXISTS "OrderStockReservation_orderId_key" ON "OrderStockReservation"("orderId");
 
 -- CreateIndex
-CREATE INDEX "OrderStockReservation_status_idx" ON "OrderStockReservation"("status");
+CREATE INDEX IF NOT EXISTS "OrderStockReservation_status_idx" ON "OrderStockReservation"("status");
 
 -- CreateIndex
-CREATE INDEX "OrderStockReservationItem_productId_idx" ON "OrderStockReservationItem"("productId");
+CREATE INDEX IF NOT EXISTS "OrderStockReservationItem_productId_idx" ON "OrderStockReservationItem"("productId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "ProductionBatch_code_key" ON "ProductionBatch"("code");
+CREATE UNIQUE INDEX IF NOT EXISTS "ProductionBatch_code_key" ON "ProductionBatch"("code");
 
 -- CreateIndex
-CREATE INDEX "ProductionBatch_area_idx" ON "ProductionBatch"("area");
+CREATE INDEX IF NOT EXISTS "ProductionBatch_area_idx" ON "ProductionBatch"("area");
 
 -- CreateIndex
-CREATE INDEX "ProductionBatch_createdAt_idx" ON "ProductionBatch"("createdAt");
+CREATE INDEX IF NOT EXISTS "ProductionBatch_createdAt_idx" ON "ProductionBatch"("createdAt");
 
 -- CreateIndex
-CREATE INDEX "OperationalReport_assignedToId_idx" ON "OperationalReport"("assignedToId");
+CREATE INDEX IF NOT EXISTS "OperationalReport_assignedToId_idx" ON "OperationalReport"("assignedToId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "User_documentNumber_key" ON "User"("documentNumber");
+CREATE UNIQUE INDEX IF NOT EXISTS "User_documentNumber_key" ON "User"("documentNumber");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "User_username_key" ON "User"("username");
+CREATE UNIQUE INDEX IF NOT EXISTS "User_username_key" ON "User"("username");
 
 -- AddForeignKey
-ALTER TABLE "AttendanceRecord" ADD CONSTRAINT "AttendanceRecord_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'AttendanceRecord_userId_fkey') THEN
+    ALTER TABLE "AttendanceRecord" ADD CONSTRAINT "AttendanceRecord_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+  END IF;
 
--- AddForeignKey
-ALTER TABLE "AttendanceRecord" ADD CONSTRAINT "AttendanceRecord_correctedById_fkey" FOREIGN KEY ("correctedById") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'AttendanceRecord_correctedById_fkey') THEN
+    ALTER TABLE "AttendanceRecord" ADD CONSTRAINT "AttendanceRecord_correctedById_fkey" FOREIGN KEY ("correctedById") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+  END IF;
 
--- AddForeignKey
-ALTER TABLE "OperationalReport" ADD CONSTRAINT "OperationalReport_assignedToId_fkey" FOREIGN KEY ("assignedToId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'OperationalReport_assignedToId_fkey') THEN
+    ALTER TABLE "OperationalReport" ADD CONSTRAINT "OperationalReport_assignedToId_fkey" FOREIGN KEY ("assignedToId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+  END IF;
 
--- AddForeignKey
-ALTER TABLE "OrderStockReservation" ADD CONSTRAINT "OrderStockReservation_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'OrderStockReservation_orderId_fkey') THEN
+    ALTER TABLE "OrderStockReservation" ADD CONSTRAINT "OrderStockReservation_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
 
--- AddForeignKey
-ALTER TABLE "OrderStockReservationItem" ADD CONSTRAINT "OrderStockReservationItem_reservationId_fkey" FOREIGN KEY ("reservationId") REFERENCES "OrderStockReservation"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'OrderStockReservationItem_reservationId_fkey') THEN
+    ALTER TABLE "OrderStockReservationItem" ADD CONSTRAINT "OrderStockReservationItem_reservationId_fkey" FOREIGN KEY ("reservationId") REFERENCES "OrderStockReservation"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
 
--- AddForeignKey
-ALTER TABLE "OrderStockReservationItem" ADD CONSTRAINT "OrderStockReservationItem_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'OrderStockReservationItem_productId_fkey') THEN
+    ALTER TABLE "OrderStockReservationItem" ADD CONSTRAINT "OrderStockReservationItem_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+  END IF;
 
--- AddForeignKey
-ALTER TABLE "InventoryMovement" ADD CONSTRAINT "InventoryMovement_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'InventoryMovement_createdById_fkey') THEN
+    ALTER TABLE "InventoryMovement" ADD CONSTRAINT "InventoryMovement_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+  END IF;
 
--- AddForeignKey
-ALTER TABLE "ProductionBatch" ADD CONSTRAINT "ProductionBatch_inputProductId_fkey" FOREIGN KEY ("inputProductId") REFERENCES "Product"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ProductionBatch_inputProductId_fkey') THEN
+    ALTER TABLE "ProductionBatch" ADD CONSTRAINT "ProductionBatch_inputProductId_fkey" FOREIGN KEY ("inputProductId") REFERENCES "Product"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+  END IF;
 
--- AddForeignKey
-ALTER TABLE "ProductionBatch" ADD CONSTRAINT "ProductionBatch_outputProductId_fkey" FOREIGN KEY ("outputProductId") REFERENCES "Product"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ProductionBatch_outputProductId_fkey') THEN
+    ALTER TABLE "ProductionBatch" ADD CONSTRAINT "ProductionBatch_outputProductId_fkey" FOREIGN KEY ("outputProductId") REFERENCES "Product"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+  END IF;
+END $$;
 

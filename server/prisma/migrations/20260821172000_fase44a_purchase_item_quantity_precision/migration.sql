@@ -1,0 +1,2 @@
+ALTER TABLE "PurchaseItem"
+ALTER COLUMN "quantity" TYPE DECIMAL(14,4);

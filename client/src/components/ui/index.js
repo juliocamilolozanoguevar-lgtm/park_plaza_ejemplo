@@ -8,3 +8,7 @@ export { SectionHeader } from "./SectionHeader";
 export { Select } from "./Select";
 export { Skeleton } from "./Skeleton";
 export { Tabs } from "./Tabs";
+export { AdminDrawer } from "./AdminDrawer";
+export { AdminModal } from "./AdminModal";
+export { AdminTable, AdminTableHead, AdminTableRow, AdminTableCell, AdminTableHeaderCell } from "./AdminTable";
+export { AdminMetricStrip } from "./AdminMetricStrip";

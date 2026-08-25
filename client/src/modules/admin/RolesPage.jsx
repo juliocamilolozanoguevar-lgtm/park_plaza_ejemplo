@@ -3,7 +3,7 @@ import { LockKeyhole, Save, Search, ShieldCheck, UserCog } from "lucide-react";
 import { LoadingSpinner } from "../../components/LoadingSpinner";
 import { useFetch } from "../../hooks/useFetch";
 import { api } from "../../services/api";
-import { Button, PageHeader } from "../../components/ui";
+import { Button, PageHeader, AdminTable, AdminTableHead, AdminTableRow, AdminTableHeaderCell, AdminTableCell } from "../../components/ui";
 import { useAuth } from "../../context/AuthContext";
 
 const actions = ["VER", "CREAR", "EDITAR", "ELIMINAR"];
@@ -99,22 +99,19 @@ export function RolesPage() {
         </div>
       </section>
 
-      <div className="overflow-x-auto rounded-card border border-park-border bg-white shadow-card">
-        <table className="min-w-full text-left text-sm">
-          <thead className="bg-park-bg text-xs uppercase text-park-muted">
-            <tr>
-              <th className="px-4 py-3">Modulo</th>
-              {actions.map((action) => <th className="px-4 py-3 text-center" key={action}>{action}</th>)}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-park-border/70">
+        <AdminTable>
+          <AdminTableHead>
+            <AdminTableHeaderCell>Modulo</AdminTableHeaderCell>
+            {actions.map((action) => <AdminTableHeaderCell className="text-center" key={action}>{action}</AdminTableHeaderCell>)}
+          </AdminTableHead>
+          <tbody>
             {filteredModules.map(([module, permissionsByAction]) => (
-              <tr key={module}>
-                <td className="px-4 py-3 font-semibold text-park-black">{module}</td>
+              <AdminTableRow key={module}>
+                <AdminTableCell className="font-semibold text-park-black">{module}</AdminTableCell>
                 {actions.map((action) => {
                   const permission = permissionsByAction[action];
                   return (
-                    <td className="px-4 py-3 text-center" key={action}>
+                    <AdminTableCell className="text-center" key={action}>
                       {permission ? (
                         <input
                           aria-label={`${module} ${action}`}
@@ -125,14 +122,13 @@ export function RolesPage() {
                           type="checkbox"
                         />
                       ) : "-"}
-                    </td>
+                    </AdminTableCell>
                   );
                 })}
-              </tr>
+              </AdminTableRow>
             ))}
           </tbody>
-        </table>
-      </div>
+        </AdminTable>
       {!filteredModules.length ? <p className="mt-4 rounded-card bg-park-bg p-4 text-sm font-semibold text-park-muted">No hay modulos que coincidan con la busqueda.</p> : null}
     </div>
   );

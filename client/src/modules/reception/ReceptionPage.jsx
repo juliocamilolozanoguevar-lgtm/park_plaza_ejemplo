@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { BedDouble, CalendarCheck, CreditCard, Eye, LogIn, LogOut, Users } from "lucide-react";
+import { Banknote, BedDouble, CalendarCheck, CreditCard, Eye, LogIn, LogOut, ScanLine, ShoppingBag, Users } from "lucide-react";
 import { LoadingSpinner } from "../../components/LoadingSpinner";
 import { MetricCard } from "../../components/MetricCard";
 import { StatusBadge } from "../../components/StatusBadge";
@@ -22,6 +22,7 @@ export function ReceptionPage() {
   if (error) return <p className="rounded-card bg-park-danger-soft p-4 font-semibold text-park-danger">{error.message}</p>;
 
   const metrics = data.metrics;
+  const activeOrders = (data.modules?.orders || []).filter((order) => !["ENTREGADO", "CANCELADO"].includes(order.status)).slice(0, 6);
   const arrivals = (reservations || [])
     .filter((reservation) => isToday(reservation.checkInDate) && !reservation.stay)
     .slice(0, 5);
@@ -39,11 +40,29 @@ export function ReceptionPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        eyebrow="Operacion diaria"
-        title="Recepcion"
-        description="Resumen operativo para gestionar llegadas, salidas, pagos pendientes y disponibilidad desde datos reales."
+        eyebrow="Recepción conectada"
+        title="Centro de atención"
+        description="Valida ingresos, confirma pagos, atiende reservas y revisa pedidos activos desde una sola vista."
         actions={canCreateReservation ? <Button as={Link} to="/reservas" variant="gold">Nueva reserva</Button> : null}
       />
+
+      <section className="grid gap-4 lg:grid-cols-[1.4fr_0.8fr]">
+        <article className="rounded-card border border-park-green bg-park-green-soft p-5 shadow-card">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-wide text-park-green">Jornada operativa activa</p>
+              <h2 className="mt-1 font-display text-2xl font-semibold text-park-dark">Recepción lista para validar servicios</h2>
+              <p className="mt-2 max-w-2xl text-sm text-park-muted">El flujo sigue el repositorio: identificar cliente, revisar reserva, confirmar pago cuando corresponda y dar pase al servicio.</p>
+            </div>
+            <span className="grid size-14 place-items-center rounded-button bg-white text-park-green shadow-card"><ScanLine size={26} /></span>
+          </div>
+        </article>
+        <article className="rounded-card border border-park-border bg-white p-5 shadow-card">
+          <p className="text-xs font-black uppercase tracking-wide text-park-muted">Caja del día</p>
+          <strong className="mt-2 block text-3xl text-park-dark">S/ {Number(metrics.incomeToday || 0).toFixed(2)}</strong>
+          <p className="mt-1 flex items-center gap-2 text-sm text-park-muted"><Banknote size={16} /> Pagos registrados y sincronizados con reservas.</p>
+        </article>
+      </section>
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard label="Llegadas hoy" value={metrics.reservationsToday} hint="reservas con entrada hoy" icon={CalendarCheck} />
@@ -53,11 +72,51 @@ export function ReceptionPage() {
       </section>
 
       <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        {canViewClients ? <ModuleCard title="Buscar cliente" description="Consulta clientes por nombre, DNI o correo." href="/clientes" icon={Users} meta="Recepcion" /> : null}
-        {canViewCheckIn ? <ModuleCard title="Check-in" description="Confirma llegada y crea la estadia." href="/checkin" icon={LogIn} meta="Flujo guiado" /> : null}
-        {canViewCheckOut ? <ModuleCard title="Check-out" description="Revisa consumos, pagos y libera la habitacion a limpieza." href="/checkout" icon={LogOut} meta="Cierre" /> : null}
+        {canViewClients ? <ModuleCard title="Identificar cliente" description="Busca por nombre, DNI o correo antes de validar su experiencia." href="/clientes" icon={Users} meta="Recepción" /> : null}
+        {canViewCheckIn ? <ModuleCard title="Validar ingreso" description="Confirma llegada, reserva pagada y pase al servicio." href="/checkin" icon={LogIn} meta="Flujo guiado" /> : null}
+        {canViewCheckOut ? <ModuleCard title="Salida y cierre" description="Revisa consumos, pagos y libera la habitación." href="/checkout" icon={LogOut} meta="Cierre" /> : null}
         {canCreatePayment ? <ModuleCard title="Registrar pago" description="Consulta movimientos y pagos operativos." href="/pagos" icon={CreditCard} meta="Caja" /> : null}
       </section>
+
+      <article className="rounded-card border border-park-border bg-white shadow-card">
+        <div className="flex items-center justify-between border-b border-park-border px-5 py-4">
+          <div>
+            <h2 className="font-display text-lg font-semibold text-park-dark">Pedidos activos</h2>
+            <p className="text-sm text-park-muted">Pedidos enviados desde la vista del cliente con cliente, habitación y detalle.</p>
+          </div>
+          <ShoppingBag className="text-park-green" size={22} />
+        </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-left text-sm">
+            <thead className="bg-park-bg text-xs uppercase text-park-muted">
+              <tr>
+                {["Pedido", "Cliente", "Habitación", "Detalle", "Área", "Estado"].map((column) => (
+                  <th className="px-5 py-3 font-bold" key={column}>{column}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-park-border">
+              {activeOrders.length ? activeOrders.map((order) => (
+                <tr key={order.id}>
+                  <td className="px-5 py-3 font-semibold text-park-black">{order.code}</td>
+                  <td className="px-5 py-3">
+                    <span className="block font-semibold text-park-black">{clientLabel(order)}</span>
+                    <span className="text-xs text-park-muted">{order.client?.documentNumber || order.stay?.client?.documentNumber || "DNI no registrado"}</span>
+                  </td>
+                  <td className="px-5 py-3 font-semibold">{roomLabel(order)}</td>
+                  <td className="max-w-[260px] truncate px-5 py-3" title={itemsLabel(order)}>{itemsLabel(order)}</td>
+                  <td className="px-5 py-3">{order.area === "BARTENDER" ? "Bar" : "Restaurante"}</td>
+                  <td className="px-5 py-3"><StatusBadge value={order.status} /></td>
+                </tr>
+              )) : (
+                <tr>
+                  <td className="px-5 py-6 text-center text-park-muted" colSpan={6}>No hay pedidos activos por ahora.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </article>
 
       <section className="grid gap-4 xl:grid-cols-[1fr_280px]">
         <article className="rounded-card border border-park-border bg-white shadow-card">
@@ -141,4 +200,24 @@ function nights(reservation) {
   const start = new Date(reservation.checkInDate);
   const end = new Date(reservation.checkOutDate);
   return Math.max(1, Math.round((end - start) / 86400000));
+}
+
+function clientLabel(order) {
+  const client = order.client || order.stay?.client;
+  return [client?.firstName, client?.lastName].filter(Boolean).join(" ").trim() || "Cliente no registrado";
+}
+
+function roomLabel(order) {
+  const room = order.room || order.stay?.room;
+  if (room?.number) return `Hab. ${room.number}`;
+  if (order.roomId) return `Hab. ${order.roomId}`;
+  return order.destinationLabel || destinationFromNotes(order.notes) || "Sin habitación";
+}
+
+function itemsLabel(order) {
+  return order.items?.map((item) => `${item.quantity} x ${item.name}`).join(", ") || "Sin productos";
+}
+
+function destinationFromNotes(notes) {
+  return String(notes || "").split("\n").find((line) => line.startsWith("Destino:"))?.slice(8).trim() || "";
 }

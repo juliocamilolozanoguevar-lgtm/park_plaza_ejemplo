@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { CalendarCheck, Eye, Mail, MapPin, Pencil, Phone, Plus, Search, Trash2, UserRound, X } from "lucide-react";
+import { Banknote, CalendarCheck, Eye, Mail, MapPin, Pencil, Phone, Plus, Search, Trash2, UserRound, X } from "lucide-react";
 import { api } from "../../services/api";
 import { useFetch } from "../../hooks/useFetch";
 import { LoadingSpinner } from "../../components/LoadingSpinner";
@@ -28,6 +28,8 @@ export function ReservationsPage() {
   const canCreate = can("RESERVAS", "CREAR");
   const canEdit = can("RESERVAS", "EDITAR");
   const canDelete = can("RESERVAS", "ELIMINAR");
+  const canCreatePayment = can("PAGOS", "CREAR");
+  const canConfirmPayment = canEdit || canCreatePayment;
   const { data: reservations, loading, reload } = useFetch("/reservations", { initialData: [] });
   const { data: roomData, reload: reloadRooms } = useFetch("/rooms", { initialData: { rooms: [] } });
   const [toast, setToast] = useState("");
@@ -40,12 +42,14 @@ export function ReservationsPage() {
   const [selected, setSelected] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [pendingCancel, setPendingCancel] = useState(null);
+  const [pendingPayment, setPendingPayment] = useState(null);
+  const [paymentMethod, setPaymentMethod] = useState("EFECTIVO");
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("TODAS");
 
   const rooms = useMemo(
-    () => (roomData?.rooms || []).filter((room) => !["MANTENIMIENTO", "FUERA_SERVICIO"].includes(room.status)),
-    [roomData]
+    () => (roomData?.rooms || []).filter((room) => room.status === "LIBRE" || (editingId && String(room.id) === String(form.roomId))),
+    [roomData, editingId, form.roomId]
   );
   const selectedRoom = rooms.find((room) => String(room.id) === String(form.roomId));
   const nights = getNights(form.checkInDate, form.checkOutDate);
@@ -60,8 +64,7 @@ export function ReservationsPage() {
       (filter === "PENDIENTES" && reservation.status === "PENDIENTE") ||
       (filter === "CONFIRMADAS" && reservation.status === "CONFIRMADA") ||
       (filter === "HOSPEDADOS" && reservation.status === "CHECKED_IN") ||
-      (filter === "FINALIZADAS" && reservation.status === "COMPLETADA") ||
-      (filter === "CANCELADAS" && ["CANCELADA", "NO_SHOW"].includes(reservation.status));
+      (filter === "FINALIZADAS" && reservation.status === "COMPLETADA");
     return matchesSearch && matchesFilter;
   }), [reservations, search, filter]);
 
@@ -156,11 +159,27 @@ export function ReservationsPage() {
 
   async function cancelReservation() {
     if (!pendingCancel) return;
-    await api(`/reservations/${pendingCancel.id}`, { method: "DELETE" });
-    setToast("Reserva cancelada.");
+    const result = await api(`/reservations/${pendingCancel.id}`, { method: "DELETE" });
+    setToast(result?.deleted ? "Reserva eliminada por completo." : "Reserva cancelada.");
     setPendingCancel(null);
     reload();
     reloadRooms();
+  }
+
+  async function confirmReservationPayment() {
+    if (!pendingPayment) return;
+    const amount = Number(pendingPayment.balance || 0);
+    if (!canConfirmPayment) return setError("No tienes permiso para confirmar pagos en reservas.");
+    if (amount <= 0) return setPendingPayment(null);
+    try {
+      await api(`/reservations/${pendingPayment.id}/payments`, { method: "POST", body: { method: paymentMethod } });
+      setToast(`Pago por ${paymentMethod.toLowerCase()} confirmado. La reserva quedó actualizada.`);
+      setPendingPayment(null);
+      setPaymentMethod("EFECTIVO");
+      await reload();
+    } catch (err) {
+      setError(err.message);
+    }
   }
 
   function editReservation(reservation) {
@@ -217,8 +236,7 @@ export function ReservationsPage() {
               ["PENDIENTES", "Pendientes"],
               ["CONFIRMADAS", "Confirmadas"],
               ["HOSPEDADOS", "Hospedados"],
-              ["FINALIZADAS", "Finalizadas"],
-              ["CANCELADAS", "Canceladas"]
+              ["FINALIZADAS", "Finalizadas"]
             ].map(([value, label]) => (
               <button className={`rounded-button px-3 py-2 text-sm font-semibold ${filter === value ? "bg-park-green text-white" : "bg-park-bg text-park-muted hover:text-park-black"}`} key={value} onClick={() => setFilter(value)} type="button">{label}</button>
             ))}
@@ -362,6 +380,7 @@ export function ReservationsPage() {
           <td className="px-4 py-3">
             <div className="flex gap-1">
               <Action title="Ver" onClick={() => setSelected(reservation)} icon={<Eye size={15} />} />
+              {canConfirmPayment && Number(reservation.balance || 0) > 0 && !["CANCELADA", "NO_SHOW", "COMPLETADA"].includes(reservation.status) ? <Action title="Confirmar pago" onClick={() => { setPaymentMethod("EFECTIVO"); setPendingPayment(reservation); }} icon={<Banknote size={15} />} /> : null}
               {canEdit ? <Action title="Editar" onClick={() => editReservation(reservation)} icon={<Pencil size={15} />} /> : null}
               {canDelete ? <Action title="Cancelar" disabled={reservation.status === "CANCELADA"} onClick={() => setPendingCancel(reservation)} icon={<Trash2 size={15} />} danger /> : null}
             </div>
@@ -372,10 +391,19 @@ export function ReservationsPage() {
       {pendingCancel ? (
         <ConfirmDialog
           title="Cancelar reserva"
-          description={`Se cancelara la reserva ${pendingCancel.code}. Esta accion actualizara la disponibilidad de la habitacion.`}
-          confirmLabel="Cancelar reserva"
+          description={hasReservationPayments(pendingCancel) ? `Se cancelara la reserva ${pendingCancel.code} porque ya tiene pagos registrados. Se conservara el historial en Pagos y Caja.` : `Se eliminara por completo la reserva ${pendingCancel.code} porque no tiene pagos registrados. Tambien desaparecera de la vista del cliente.`}
+          confirmLabel={hasReservationPayments(pendingCancel) ? "Cancelar reserva" : "Eliminar reserva"}
           onCancel={() => setPendingCancel(null)}
           onConfirm={cancelReservation}
+        />
+      ) : null}
+      {pendingPayment ? (
+        <PaymentDialog
+          reservation={pendingPayment}
+          method={paymentMethod}
+          setMethod={setPaymentMethod}
+          onCancel={() => { setPendingPayment(null); setPaymentMethod("EFECTIVO"); }}
+          onConfirm={confirmReservationPayment}
         />
       ) : null}
     </div>
@@ -434,6 +462,32 @@ function ConfirmDialog({ title, description, confirmLabel, onCancel, onConfirm }
         <div className="mt-5 flex justify-end gap-2">
           <Button type="button" variant="secondary" onClick={onCancel}>Volver</Button>
           <Button type="button" variant="danger" onClick={onConfirm}>{confirmLabel}</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PaymentDialog({ reservation, method, setMethod, onCancel, onConfirm }) {
+  return (
+    <div className="fixed inset-0 z-40 grid place-items-center bg-slate-950/35 p-4">
+      <div className="w-full max-w-md rounded-card bg-white p-5 shadow-drawer">
+        <h3 className="font-display text-xl font-semibold text-park-dark">Confirmar pago</h3>
+        <p className="mt-2 text-sm leading-6 text-park-muted">
+          Se registrara el pago de S/ {Number(reservation.balance).toFixed(2)} para la reserva {reservation.code}. El movimiento aparecera en Pagos y Caja.
+        </p>
+        <div className="mt-4">
+          <Select label="Metodo de pago" value={method} onChange={setMethod}>
+            <option value="EFECTIVO">Efectivo</option>
+            <option value="TARJETA">Tarjeta</option>
+            <option value="YAPE">Yape</option>
+            <option value="PLIN">Plin</option>
+            <option value="TRANSFERENCIA">Transferencia</option>
+          </Select>
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button type="button" variant="secondary" onClick={onCancel}>Volver</Button>
+          <Button type="button" variant="danger" onClick={onConfirm}>Confirmar pago</Button>
         </div>
       </div>
     </div>
@@ -537,6 +591,10 @@ function toInputDate(value) {
 
 function formatDate(value) {
   return new Date(value).toLocaleDateString("es-PE");
+}
+
+function hasReservationPayments(reservation) {
+  return Boolean((reservation?.payments || []).length || Number(reservation?.advance || 0) > 0);
 }
 
 function originLabel(origin) {

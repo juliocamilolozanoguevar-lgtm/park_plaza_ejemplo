@@ -1,19 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ChefHat, Clock, Eye, PackageCheck, X } from "lucide-react";
-import { useLocation } from "react-router-dom";
-import { api } from "../../services/api";
-import { useFetch } from "../../hooks/useFetch";
+import { CheckCircle2, ChefHat, Clock, Eye, MapPin, PackageCheck, Scale, Wine, X } from "lucide-react";
+import { Link, useLocation } from "react-router-dom";
+import { Alert, Button, ModuleNav, PageHeader, Tabs } from "../../components/ui";
 import { EmptyState } from "../../components/EmptyState";
 import { LoadingSpinner } from "../../components/LoadingSpinner";
 import { OrderRecipePlan } from "../../components/OrderRecipePlan";
 import { StatusBadge } from "../../components/StatusBadge";
 import { Toast } from "../../components/Toast";
-import { Button, ModuleNav, PageHeader, Select as UiSelect, Tabs } from "../../components/ui";
 import { useAuth } from "../../context/AuthContext";
+import { useFetch } from "../../hooks/useFetch";
+import { api } from "../../services/api";
 
 const routeStatus = {
   "/restaurante/pedidos": "PENDIENTE",
-  "/restaurante/cocina": "EN_COCINA",
   "/restaurante/preparacion": "PREPARANDO",
   "/restaurante/listos": "LISTO",
   "/restaurante/entregados": "ENTREGADO",
@@ -22,201 +21,176 @@ const routeStatus = {
   "/bartender/entregados": "ENTREGADO"
 };
 
-const nextStatus = {
-  PENDIENTE: "EN_COCINA",
-  EN_COCINA: "PREPARANDO",
-  PREPARANDO: "LISTO",
-  LISTO: "ENTREGADO"
-};
+const activeStatuses = new Set(["PENDIENTE", "EN_COCINA", "PREPARANDO", "LISTO"]);
 
-export function OrdersAreaPage({ area }) {
+export function OrdersAreaPage({ area, embedded = false }) {
   const { can } = useAuth();
-  const canCreate = can(area, "CREAR");
   const canEdit = can(area, "EDITAR");
   const location = useLocation();
-  const initialStatus = routeStatus[location.pathname] || (location.pathname.includes("historial") ? "ENTREGADO" : "TODOS");
-  const [statusFilter, setStatusFilter] = useState(initialStatus);
-  const endpoint = area === "BARTENDER" ? "/bartender" : "/restaurante";
-  const { data: orders, loading, reload } = useFetch(endpoint, { initialData: [] });
-  const { data: products } = useFetch(`/reports/products?area=${area}`, { initialData: [] });
+  const isBar = area === "BARTENDER";
+  const routeView = viewFromStatus(routeStatus[location.pathname] || (location.pathname.includes("historial") ? "ENTREGADO" : null));
+  const [view, setView] = useState(routeView || "ACTIVOS");
   const [toast, setToast] = useState("");
-  const [reportOpen, setReportOpen] = useState(false);
+  const [failure, setFailure] = useState("");
+  const [busyId, setBusyId] = useState(null);
   const [selected, setSelected] = useState(null);
-  const [report, setReport] = useState({ type: "FALTA_INSUMO", priority: "MEDIA", description: "", productId: "" });
-  const title = area === "BARTENDER" ? "BarTender" : "Restaurante";
-  const statusTabs = area === "BARTENDER"
-    ? ["TODOS", "PENDIENTE", "PREPARANDO", "LISTO", "ENTREGADO"]
-    : ["TODOS", "PENDIENTE", "EN_COCINA", "PREPARANDO", "LISTO", "ENTREGADO"];
+  const [cancelOrder, setCancelOrder] = useState(null);
+  const { data: orders = [], loading, reload } = useFetch(isBar ? "/bartender" : "/restaurante", { initialData: [] });
+  const Icon = isBar ? Wine : ChefHat;
+  const list = Array.isArray(orders) ? orders : [];
 
   useEffect(() => {
-    setStatusFilter(routeStatus[location.pathname] || (location.pathname.includes("historial") ? "ENTREGADO" : "TODOS"));
-  }, [location.pathname]);
+    if (routeView) setView(routeView);
+  }, [routeView]);
 
-  const counters = useMemo(() => {
-    const list = orders || [];
-    return {
-      pending: list.filter((item) => item.status === "PENDIENTE").length,
-      progress: list.filter((item) => ["EN_COCINA", "PREPARANDO", "LISTO"].includes(item.status)).length,
-      delivered: list.filter((item) => item.status === "ENTREGADO").length
-    };
-  }, [orders]);
+  const filtered = useMemo(() => {
+    const sorted = [...list].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+    if (view === "ACTIVOS") return sorted.filter((order) => activeStatuses.has(order.status));
+    if (view === "RECIBIDOS") return sorted.filter((order) => order.status === "PENDIENTE");
+    if (view === "PREPARANDO") return sorted.filter((order) => ["EN_COCINA", "PREPARANDO"].includes(order.status));
+    if (view === "LISTOS") return sorted.filter((order) => order.status === "LISTO");
+    if (view === "ENTREGADOS") return sorted.filter((order) => order.status === "ENTREGADO");
+    return sorted;
+  }, [list, view]);
 
-  const visibleOrders = useMemo(() => {
-    const list = orders || [];
-    if (statusFilter === "TODOS") return list;
-    return list.filter((item) => item.status === statusFilter);
-  }, [orders, statusFilter]);
-
-  async function changeStatus(order, targetStatus) {
+  async function changeStatus(order, target) {
+    setBusyId(order.id);
+    setFailure("");
     try {
-      const updated = await api(`${area === "BARTENDER" ? "/bartender" : "/restaurante"}/${order.id}/status`, {
+      const updated = await api(`${isBar ? "/bartender" : "/restaurante"}/${order.id}/status`, {
         method: "PATCH",
-        body: { status: targetStatus }
+        body: { status: target }
       });
-      setToast(`Pedido ${order.code} actualizado.`);
+      setToast(toastMessage(order, target));
       if (selected?.id === order.id) setSelected(updated);
-      reload();
+      await reload();
     } catch (error) {
-      setToast(error.message || "No se pudo actualizar el pedido.");
-      if (error.details) setSelected({ ...order, recipePlan: { ...(order.recipePlan || {}), ...error.details, canPrepare: false } });
+      setFailure(error.message || "No se pudo actualizar el pedido.");
+    } finally {
+      setBusyId(null);
     }
-  }
-
-  async function submitReport(event) {
-    event.preventDefault();
-    await api("/reports", { method: "POST", body: { ...report, area, productId: report.type === "FALTA_INSUMO" ? report.productId : null } });
-    setToast("Reporte operativo registrado.");
-    setReport({ type: "FALTA_INSUMO", priority: "MEDIA", description: "", productId: "" });
-    setReportOpen(false);
   }
 
   if (loading) return <LoadingSpinner />;
 
+  const active = list.filter((order) => activeStatuses.has(order.status));
+
   return (
     <div className="space-y-5">
       <Toast message={toast} onClose={() => setToast("")} />
-      <PageHeader
-        eyebrow={title}
-        title="Pedidos"
-        description="Gestion operativa del area."
-        actions={canCreate ? <Button variant="gold" icon={AlertTriangle} type="button" onClick={() => setReportOpen(true)}>Reportar problema</Button> : null}
-      />
-      <ModuleNav items={area === "BARTENDER" ? [
-        { label: "Pedidos", href: "/bartender/pendientes" },
-        { label: "Insumos", href: "/bartender/insumos" },
-        { label: "Historial", href: "/bartender/historial" }
-      ] : [
-        { label: "Pedidos", href: "/restaurante/pedidos" },
-        { label: "Produccion", href: "/restaurante/produccion" },
-        { label: "Historial", href: "/restaurante/historial" }
-      ]} />
-      <section className="rounded-card border border-park-border bg-white p-5 shadow-card">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="max-w-full overflow-x-auto">
-            <Tabs tabs={statusTabs.map((item) => ({ value: item, label: item === "TODOS" ? "Todos" : item.replaceAll("_", " ") }))} value={statusFilter} onChange={setStatusFilter} />
-          </div>
-          <div className="grid grid-cols-3 gap-2 text-center text-xs font-black">
-            <Metric label="Pendientes" value={counters.pending} icon={<Clock size={16} />} />
-            <Metric label="Proceso" value={counters.progress} icon={<ChefHat size={16} />} />
-            <Metric label="Entregados" value={counters.delivered} icon={<PackageCheck size={16} />} />
-          </div>
-        </div>
+      {!embedded ? (
+        <>
+          <PageHeader
+            eyebrow={isBar ? "Sistema independiente de Bar" : "Sistema independiente de Restaurante"}
+            title={isBar ? "Pedidos y preparación de bebidas" : "Pedidos y preparación de platos"}
+            description={isBar ? "Recibe, prepara, marca listo y entrega bebidas conectadas al cliente." : "Recibe, acepta, prepara, marca listo y entrega pedidos conectados al cliente."}
+            actions={<Button as={Link} to="/inventario" variant="secondary" icon={PackageCheck}>Inventario y cierre</Button>}
+          />
+          <ModuleNav items={isBar ? [
+            { label: "Pedidos", href: "/bartender/pendientes" },
+            { label: "Insumos", href: "/bartender/insumos" },
+            { label: "Historial", href: "/bartender/historial" }
+          ] : [
+            { label: "Pedidos", href: "/restaurante/pedidos" },
+            { label: "Produccion", href: "/restaurante/produccion" },
+            { label: "Historial", href: "/restaurante/historial" }
+          ]} />
+        </>
+      ) : null}
+
+      <section className="grid gap-3 sm:grid-cols-3">
+        <Metric icon={Clock} label="Pedidos activos" value={active.length} />
+        <Metric icon={Icon} label={isBar ? "Bebidas preparando" : "Platos preparando"} value={list.filter((order) => ["EN_COCINA", "PREPARANDO"].includes(order.status)).length} />
+        <Metric icon={CheckCircle2} label="Listos para entregar" value={list.filter((order) => order.status === "LISTO").length} />
       </section>
 
-      {!visibleOrders?.length ? <EmptyState title="Sin pedidos" description="No hay pedidos para este estado." /> : (
-        <div className="grid gap-3 xl:grid-cols-2">
-          {visibleOrders.map((order) => (
-            <article key={order.id} className="rounded-card border border-park-border bg-white p-4 shadow-card">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h3 className="font-black text-park-text">{order.code}</h3>
-                  <p className="text-sm text-park-muted">Habitacion {order.roomId || "Piscina"} - S/ {Number(order.total).toFixed(2)}</p>
-                </div>
-                <StatusBadge value={order.status} />
-              </div>
-              <div className="mt-4 space-y-2">
-                {order.items.map((item) => (
-                  <div key={item.id} className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-sm">
-                    <span className="font-bold">{item.quantity} x {item.name}</span>
-                    <span>S/ {(Number(item.price) * Number(item.quantity)).toFixed(2)}</span>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-4 flex flex-wrap justify-end gap-2">
-                {canEdit && nextOrderStatus(area, order.status) && order.status !== "LISTO" && (
-                  <Button type="button" onClick={() => changeStatus(order, nextOrderStatus(area, order.status))}>
-                    {orderActionLabel(area, order.status)}
-                  </Button>
-                )}
-                {canEdit && order.status === "LISTO" && (
-                  <Button type="button" variant="gold" onClick={() => changeStatus(order, "ENTREGADO")}>
-                    {area === "RESTAURANTE" ? "Confirmar entrega" : "Entregar"}
-                  </Button>
-                )}
-                {order.status === "ENTREGADO" && (
-                  <Button type="button" variant="secondary" icon={Eye} onClick={() => setSelected(order)}>Ver detalle</Button>
-                )}
-                {order.status !== "ENTREGADO" && <Button type="button" variant="secondary" icon={Eye} onClick={() => setSelected(order)}>Ver detalle</Button>}
-              </div>
-            </article>
+      <section className="flex flex-col gap-3 rounded-card border border-park-border bg-white p-4 shadow-card lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <h2 className="text-balance text-lg font-black text-park-dark">Flujo en una sola pantalla</h2>
+          <p className="text-pretty text-sm text-park-muted">
+            {isBar ? "Recibir → Preparar → Listo y descontado → Entregar" : "Recibir → Aceptar → Preparar → Listo y descontado → Entregar"}
+          </p>
+        </div>
+        <Tabs tabs={[
+          { value: "ACTIVOS", label: "Activos" },
+          { value: "LISTOS", label: "Listos" },
+          { value: "ENTREGADOS", label: "Entregados" },
+          { value: "TODOS", label: "Todos" }
+        ]} value={view} onChange={setView} />
+      </section>
+
+      {failure ? <Alert tone="danger" title="No se pudo actualizar el pedido">{failure}</Alert> : null}
+      {!filtered.length ? <EmptyState icon={Icon} title="Sin pedidos en esta vista" description="Los pedidos nuevos aparecerán aquí automáticamente." /> : (
+        <section className="grid gap-4 xl:grid-cols-2">
+          {filtered.map((order) => (
+            <OrderCard
+              key={order.id}
+              order={order}
+              area={area}
+              canEdit={canEdit}
+              busy={busyId === order.id}
+              onAdvance={(target) => changeStatus(order, target)}
+              onCancel={() => setCancelOrder(order)}
+              onSelect={() => setSelected(order)}
+            />
           ))}
-        </div>
+        </section>
       )}
-      {selected ? (
-        <OrderDetail
-          area={area}
-          canEdit={canEdit}
-          order={selected}
-          onClose={() => setSelected(null)}
-          onRequestSupply={(ingredient) => {
-            setReport({
-              type: "FALTA_INSUMO",
-              priority: "ALTA",
-              description: `Stock insuficiente para ${ingredient.productName}. Necesario: ${ingredient.required} ${ingredient.unit}. Disponible: ${ingredient.available} ${ingredient.unit}. Pedido: ${selected.code}.`,
-              productId: ingredient.productId || ""
-            });
-            setReportOpen(true);
-          }}
-          onStatus={changeStatus}
-        />
-      ) : null}
-      {reportOpen && (
-        <div className="fixed inset-0 z-40 grid place-items-center bg-slate-950/30 p-4">
-          <form className="w-full max-w-lg rounded-card bg-white p-5 shadow-drawer" onSubmit={submitReport}>
-            <div className="mb-4 flex items-center justify-between"><h3 className="font-display text-xl font-semibold text-park-dark">Reportar problema</h3><Button type="button" variant="ghost" onClick={() => setReportOpen(false)}>Cerrar</Button></div>
-            <div className="grid gap-3 md:grid-cols-2">
-              <Select label="Tipo" value={report.type} onChange={(type) => setReport({ ...report, type })} options={["FALTA_INSUMO", "DANO_EQUIPO", "INCIDENCIA", "OTRO"]} />
-              <Select label="Prioridad" value={report.priority} onChange={(priority) => setReport({ ...report, priority })} options={["BAJA", "MEDIA", "ALTA", "CRITICA"]} />
-              {report.type === "FALTA_INSUMO" && <label className="block text-xs font-black uppercase text-park-muted md:col-span-2">Producto<select className="mt-1 h-11 w-full rounded-input border border-park-border px-3 text-sm font-normal normal-case text-park-text outline-none focus:border-park-green focus:ring-2 focus:ring-park-green/15" value={report.productId} onChange={(event) => setReport({ ...report, productId: event.target.value })}><option value="">Seleccionar producto</option>{products.map((product) => <option key={product.id} value={product.id}>{product.name} - Stock {Number(product.stock)}</option>)}</select></label>}
-              <textarea className="min-h-24 rounded-input border border-park-border px-3 py-2 text-sm outline-none transition focus:border-park-green focus:ring-2 focus:ring-park-green/15 md:col-span-2" placeholder="Descripcion" value={report.description} onChange={(event) => setReport({ ...report, description: event.target.value })} required />
-            </div>
-            <div className="mt-5 flex justify-end gap-2"><Button type="button" variant="secondary" onClick={() => setReportOpen(false)}>Cancelar</Button><Button>Guardar reporte</Button></div>
-          </form>
-        </div>
-      )}
+
+      {selected ? <OrderDetail area={area} canEdit={canEdit} order={selected} onClose={() => setSelected(null)} onStatus={changeStatus} /> : null}
+      {cancelOrder ? <CancelOrderModal order={cancelOrder} onClose={() => setCancelOrder(null)} onConfirm={async () => { await changeStatus(cancelOrder, "CANCELADO"); setCancelOrder(null); }} /> : null}
     </div>
   );
 }
 
-function nextOrderStatus(area, status) {
-  if (area === "BARTENDER") {
-    const flow = { PENDIENTE: "PREPARANDO", PREPARANDO: "LISTO" };
-    return flow[status] || null;
-  }
-  return nextStatus[status] || null;
+function OrderCard({ order, area, canEdit, busy, onAdvance, onCancel, onSelect }) {
+  const target = nextStatus(area, order.status);
+  const destination = destinationFor(order);
+  return (
+    <article className={`rounded-card border bg-white p-5 shadow-card ${order.status === "LISTO" ? "border-park-green" : "border-park-border"}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="flex flex-wrap items-center gap-2"><h2 className="text-lg font-black text-park-dark">{order.code}</h2><StatusBadge value={order.status} /></div>
+          <p className="mt-1 flex items-center gap-1.5 text-sm font-bold text-park-green"><MapPin size={15} /> {destination.label}</p>
+          <p className="mt-1 text-xs font-semibold text-park-muted">{clientLabel(order)} · {formatDateTime(order.createdAt)}</p>
+        </div>
+        <span className="rounded-full bg-park-bg px-3 py-1.5 text-xs font-bold text-park-muted">{order.estimatedMinutes || 15} min</span>
+      </div>
+
+      <div className="mt-4 space-y-3">
+        {(order.items || []).map((item) => <RecipeTicket key={item.id || `${item.productId}-${item.name}`} item={item} />)}
+      </div>
+      {order.notes ? <div className="mt-4 rounded-card border border-amber-200 bg-amber-50 p-3 text-sm"><strong className="text-amber-900">Indicación:</strong> <span className="whitespace-pre-line text-amber-800">{order.notes}</span></div> : null}
+
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-park-border pt-4">
+        <div><p className="text-xs text-park-muted">Destino de entrega</p><strong className="text-sm text-park-dark">{destination.detail}</strong></div>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="secondary" icon={Eye} onClick={onSelect}>Ver detalle</Button>
+          {canEdit && !["ENTREGADO", "CANCELADO"].includes(order.status) ? <Button type="button" variant="ghost" onClick={onCancel}>Cancelar</Button> : null}
+          {canEdit && target ? <Button type="button" loading={busy} icon={target === "ENTREGADO" ? MapPin : target === "LISTO" ? Scale : area === "BARTENDER" ? Wine : ChefHat} variant={target === "ENTREGADO" ? "gold" : "primary"} onClick={() => onAdvance(target)}>{actionLabel(area, order.status, destination.label)}</Button> : null}
+        </div>
+      </div>
+    </article>
+  );
 }
 
-function orderActionLabel(area, status) {
-  if (area === "BARTENDER" && status === "PENDIENTE") return "Iniciar preparacion";
-  if (area === "RESTAURANTE" && status === "PENDIENTE") return "Aceptar pedido";
-  if (area === "RESTAURANTE" && status === "EN_COCINA") return "Iniciar preparacion";
-  if (area === "RESTAURANTE" && status === "PREPARANDO") return "Marcar como listo";
-  if (status === "PREPARANDO") return "Pasar a LISTO";
-  return `Pasar a ${nextOrderStatus(area, status)?.replaceAll("_", " ")}`;
+function RecipeTicket({ item }) {
+  const total = Number(item.price || 0) * Number(item.quantity || 0);
+  return (
+    <section className="overflow-hidden rounded-card border border-park-border">
+      <div className="flex items-center justify-between gap-3 bg-park-bg px-4 py-3">
+        <div>
+          <strong className="text-park-dark">{item.quantity} x {item.name}</strong>
+          <p className="text-xs text-park-muted">{item.category || "Pedido de carta"}</p>
+        </div>
+        <strong className="text-sm text-park-green">S/ {total.toFixed(2)}</strong>
+      </div>
+    </section>
+  );
 }
 
-function OrderDetail({ area, canEdit, order, onClose, onRequestSupply, onStatus }) {
-  const next = nextOrderStatus(area, order.status);
+function OrderDetail({ area, canEdit, order, onClose, onStatus }) {
+  const next = nextStatus(area, order.status);
   return (
     <div className="fixed inset-0 z-40 bg-slate-950/30 p-4">
       <aside className="ml-auto h-full max-w-md overflow-auto rounded-card bg-white p-5 shadow-drawer">
@@ -230,13 +204,16 @@ function OrderDetail({ area, canEdit, order, onClose, onRequestSupply, onStatus 
         <div className="mt-4"><StatusBadge value={order.status} /></div>
         <section className="mt-5 rounded-card border border-park-border bg-park-bg p-4">
           <h4 className="mb-3 text-xs font-black uppercase text-park-green">Informacion general</h4>
-          <DetailRow label="Habitacion" value={order.stay?.room?.number || order.roomId || "Piscina"} />
-          <DetailRow label="Producto" value={order.items?.map((item) => `${item.quantity} x ${item.name}`).join(", ")} />
+          <DetailRow label="Cliente" value={clientLabel(order)} />
+          <DetailRow label="Habitacion" value={destinationFor(order).label} />
+          <DetailRow label="Producto" value={itemsLabel(order)} />
           <DetailRow label="Total" value={`S/ ${Number(order.total).toFixed(2)}`} />
+          <DetailRow label="Destino" value={order.destinationLabel || destinationFromNotes(order.notes)} />
+          <DetailRow label="Notas" value={order.notes} />
           <DetailRow label="Recibido" value={formatDateTime(order.createdAt)} />
           <DetailRow label="Actualizado" value={formatDateTime(order.updatedAt)} />
         </section>
-        <OrderRecipePlan plan={order.recipePlan} onRequestSupply={onRequestSupply} />
+        <OrderRecipePlan plan={order.recipePlan} />
         <section className="mt-4 rounded-card border border-park-border bg-white p-4">
           <h4 className="mb-3 text-xs font-black uppercase text-park-green">Historial del pedido</h4>
           {historyFor(order).map((item) => (
@@ -248,8 +225,8 @@ function OrderDetail({ area, canEdit, order, onClose, onRequestSupply, onStatus 
         </section>
         {canEdit && next ? (
           <div className="mt-5 flex justify-end">
-            <Button type="button" onClick={() => onStatus(order, next)}>
-              {orderActionLabel(area, order.status)}
+            <Button type="button" icon={next === "ENTREGADO" ? MapPin : next === "LISTO" ? Scale : area === "BARTENDER" ? Wine : ChefHat} onClick={() => onStatus(order, next)}>
+              {actionLabel(area, order.status, destinationFor(order).label)}
             </Button>
           </div>
         ) : null}
@@ -258,33 +235,89 @@ function OrderDetail({ area, canEdit, order, onClose, onRequestSupply, onStatus 
   );
 }
 
+function CancelOrderModal({ order, onClose, onConfirm }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4">
+      <form className="w-full max-w-lg rounded-card bg-white p-5 shadow-drawer" onSubmit={async (event) => { event.preventDefault(); setBusy(true); setError(""); try { await onConfirm(); } catch (failure) { setError(failure.message); } finally { setBusy(false); } }}>
+        <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase text-park-gold">Cancelar pedido</p><h2 className="text-xl font-black text-park-dark">{order.code}</h2></div><button type="button" className="grid size-9 place-items-center rounded-button border border-park-border" aria-label="Cerrar" onClick={onClose}><X size={17} /></button></div>
+        <p className="mt-4 text-sm text-park-muted">El pedido saldrá de la operación activa. Si ya estaba en preparación, revisa inventario antes de cerrar turno.</p>
+        {error ? <p className="mt-3 text-sm font-bold text-park-danger">{error}</p> : null}
+        <div className="mt-5 flex justify-end gap-2"><Button type="button" variant="secondary" onClick={onClose}>Volver</Button><Button variant="danger" loading={busy}>Confirmar cancelación</Button></div>
+      </form>
+    </div>
+  );
+}
+
+function nextStatus(area, status) {
+  const flow = area === "BARTENDER"
+    ? { PENDIENTE: "PREPARANDO", PREPARANDO: "LISTO", LISTO: "ENTREGADO" }
+    : { PENDIENTE: "EN_COCINA", EN_COCINA: "PREPARANDO", PREPARANDO: "LISTO", LISTO: "ENTREGADO" };
+  return flow[status] || null;
+}
+
+function actionLabel(area, status, destination) {
+  if (status === "PENDIENTE") return area === "BARTENDER" ? "Aceptar y preparar" : "Aceptar pedido";
+  if (status === "EN_COCINA") return "Iniciar preparacion";
+  if (status === "PREPARANDO") return "Terminado - descontar receta";
+  if (status === "LISTO") return "Entregar en " + destination;
+  return "Avanzar pedido";
+}
+
+function destinationFor(order) {
+  const room = order.room?.number || order.stay?.room?.number || order.roomId;
+  if (room) return { label: "Habitacion " + room, detail: "Llevar a la habitacion " + room };
+  const destination = order.destinationLabel || destinationFromNotes(order.notes);
+  if (destination) return { label: destination, detail: destination };
+  return { label: "Servicio sin habitacion", detail: "Confirmar punto de entrega con el cliente" };
+}
+
+function toastMessage(order, target) {
+  if (target === "EN_COCINA") return `${order.code} aceptado por cocina.`;
+  if (target === "PREPARANDO") return `${order.code} aceptado y en preparacion.`;
+  if (target === "LISTO") return `${order.code} listo para entregar.`;
+  if (target === "ENTREGADO") return `${order.code} entregado.`;
+  if (target === "CANCELADO") return `${order.code} cancelado.`;
+  return `${order.code} actualizado.`;
+}
+
+function viewFromStatus(status) {
+  return ({ PENDIENTE: "RECIBIDOS", EN_COCINA: "PREPARANDO", PREPARANDO: "PREPARANDO", LISTO: "LISTOS", ENTREGADO: "ENTREGADOS" })[status];
+}
+
 function DetailRow({ label, value }) {
   if (!value) return null;
   return <div className="mb-3 grid grid-cols-[110px_1fr] gap-3 text-sm last:mb-0"><span className="font-semibold text-park-muted">{label}</span><strong className="text-park-black">{value}</strong></div>;
 }
 
+function clientLabel(order) {
+  const client = order.client || order.stay?.client;
+  return [client?.firstName, client?.lastName].filter(Boolean).join(" ").trim() || "Cliente no registrado";
+}
+
+function destinationFromNotes(notes) {
+  return String(notes || "").split("\n").find((line) => line.startsWith("Destino:"))?.slice(8).trim() || "";
+}
+
 function historyFor(order) {
   const steps = ["Pedido recibido"];
-  if (["PREPARANDO", "LISTO", "ENTREGADO"].includes(order.status)) steps.push("Preparacion iniciada");
-  if (["LISTO", "ENTREGADO"].includes(order.status)) steps.push("Marcado como listo");
+  if (["EN_COCINA", "PREPARANDO", "LISTO", "ENTREGADO"].includes(order.status)) steps.push("Pedido aceptado");
+  if (["PREPARANDO", "LISTO", "ENTREGADO"].includes(order.status)) steps.push("En preparacion");
+  if (["LISTO", "ENTREGADO"].includes(order.status)) steps.push("Pedido listo");
   if (order.status === "ENTREGADO") steps.push("Pedido entregado");
   return steps;
 }
 
+function itemsLabel(order) {
+  return order.items?.map((item) => `${item.quantity} x ${item.name}`).join(", ") || "Sin productos";
+}
+
 function formatDateTime(value) {
-  if (!value) return null;
+  if (!value) return "No registrado";
   return new Date(value).toLocaleString("es-PE");
 }
 
-function Metric({ label, value, icon }) {
-  return (
-    <div className="rounded-card border border-park-border bg-park-bg px-3 py-2">
-      <div className="flex items-center justify-center gap-1 text-park-green">{icon}<span>{value}</span></div>
-      <span className="text-park-muted">{label}</span>
-    </div>
-  );
-}
-
-function Select({ label, value, onChange, options }) {
-  return <UiSelect label={label} value={value} onChange={(event) => onChange(event.target.value)}>{options.map((option) => <option key={option} value={option}>{option.replaceAll("_", " ")}</option>)}</UiSelect>;
+function Metric({ icon: Icon, label, value }) {
+  return <article className="rounded-card border border-park-border bg-white p-4 shadow-card"><div className="flex items-center gap-3"><span className="grid size-10 place-items-center rounded-button bg-park-green-soft text-park-green"><Icon size={19} /></span><div><strong className="tabular-nums text-2xl text-park-dark">{value}</strong><p className="text-sm text-park-muted">{label}</p></div></div></article>;
 }

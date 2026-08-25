@@ -1,4 +1,4 @@
-﻿FROM node:20-bookworm-slim
+FROM node:20-bookworm-slim
 
 WORKDIR /app
 
@@ -21,4 +21,5 @@ ENV NODE_ENV=production
 
 EXPOSE 3000
 
-CMD ["sh", "-c", "npx prisma db push --skip-generate && node prisma/ensure-maintenance-user.js && npm start"]
+CMD ["sh", "-c", "npx prisma db push --accept-data-loss --skip-generate && node prisma/ensure-maintenance-user.js && npm start"]
+

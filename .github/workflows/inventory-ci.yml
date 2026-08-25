@@ -1,0 +1,104 @@
+name: Inventory CI
+
+on:
+  push:
+    branches:
+      - desarrollo
+  pull_request:
+    branches:
+      - desarrollo
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    name: Inventory tests and frontend build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: park_plaza_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d park_plaza_test"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      NODE_ENV: test
+      PORT: 3000
+      FRONTEND_URL: http://localhost:5173
+      JWT_SECRET: ci_test_secret_not_for_production
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: park_plaza_test
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/park_plaza_test?schema=public
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npm run db:generate
+
+      - name: Apply Prisma migrations
+        working-directory: server
+        run: npx prisma migrate deploy
+
+      - name: Test inventory exits
+        working-directory: server
+        run: node test-inventory-exits.js
+
+      - name: Test inventory integral
+        working-directory: server
+        run: node test-inventory-integral.js
+
+      - name: Test inventory inspections
+        working-directory: server
+        run: node test-inventory-inspections.js
+
+      - name: Test inventory entries
+        working-directory: server
+        run: node test-inventory-entries.js
+
+      - name: Test inventory adjustments
+        working-directory: server
+        run: node test-inventory-adjustments.js
+
+      - name: Test inventory losses
+        working-directory: server
+        run: node test-inventory-losses.js
+
+      - name: Test production lots
+        working-directory: server
+        run: node test-production-lots.js
+
+      - name: Test FEFO reservations and consumption
+        working-directory: server
+        run: node test-fefo.js
+
+      - name: Test purchase lots
+        working-directory: server
+        run: node test-lots.js
+
+      - name: Build frontend
+        run: npm run build --workspace client

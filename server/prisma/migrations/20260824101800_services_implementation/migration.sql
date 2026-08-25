@@ -1,0 +1,159 @@
+-- CreateEnum
+CREATE TYPE "ServiceReservationType" AS ENUM ('PISCINA', 'MIRADOR');
+
+-- CreateEnum
+CREATE TYPE "ServiceReservationStatus" AS ENUM ('PENDIENTE', 'CONFIRMADA', 'CANCELADA', 'EN_USO', 'FINALIZADA');
+
+-- CreateEnum
+CREATE TYPE "ServicePricingMode" AS ENUM ('ADULTO', 'NINO', 'FAMILIAR', 'PERSONA', 'FIJO');
+
+-- AlterTable
+ALTER TABLE "Payment" ADD COLUMN     "serviceReservationId" INTEGER;
+
+-- AlterTable
+ALTER TABLE "PoolEntry" ADD COLUMN     "serviceReservationId" INTEGER;
+
+-- CreateTable
+CREATE TABLE "ServiceSlot" (
+    "id" SERIAL NOT NULL,
+    "serviceType" "ServiceReservationType" NOT NULL,
+    "startTime" TEXT NOT NULL,
+    "endTime" TEXT NOT NULL,
+    "capacity" INTEGER NOT NULL,
+    "active" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "ServiceSlot_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "ServicePlan" (
+    "id" SERIAL NOT NULL,
+    "serviceType" "ServiceReservationType" NOT NULL,
+    "code" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "description" TEXT,
+    "price" DECIMAL(10,2) NOT NULL,
+    "pricingMode" "ServicePricingMode" NOT NULL,
+    "active" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "ServicePlan_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "ServiceExtra" (
+    "id" SERIAL NOT NULL,
+    "serviceType" "ServiceReservationType" NOT NULL,
+    "name" TEXT NOT NULL,
+    "description" TEXT,
+    "price" DECIMAL(10,2) NOT NULL,
+    "active" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "ServiceExtra_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "ServiceReservation" (
+    "id" SERIAL NOT NULL,
+    "code" TEXT NOT NULL,
+    "clientId" INTEGER NOT NULL,
+    "stayId" INTEGER,
+    "reservationId" INTEGER,
+    "serviceType" "ServiceReservationType" NOT NULL,
+    "status" "ServiceReservationStatus" NOT NULL DEFAULT 'PENDIENTE',
+    "date" TIMESTAMP(3) NOT NULL,
+    "slotId" INTEGER NOT NULL,
+    "adults" INTEGER NOT NULL DEFAULT 0,
+    "children" INTEGER NOT NULL DEFAULT 0,
+    "people" INTEGER NOT NULL,
+    "planId" INTEGER,
+    "planCode" TEXT,
+    "planName" TEXT,
+    "baseAmount" DECIMAL(10,2) NOT NULL,
+    "extrasAmount" DECIMAL(10,2) NOT NULL DEFAULT 0,
+    "totalAmount" DECIMAL(10,2) NOT NULL,
+    "advance" DECIMAL(10,2) NOT NULL DEFAULT 0,
+    "balance" DECIMAL(10,2) NOT NULL,
+    "notes" TEXT,
+    "qrCode" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "cancelledAt" TIMESTAMP(3),
+    "checkedInAt" TIMESTAMP(3),
+    "completedAt" TIMESTAMP(3),
+
+    CONSTRAINT "ServiceReservation_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "ServiceReservationExtra" (
+    "id" SERIAL NOT NULL,
+    "serviceReservationId" INTEGER NOT NULL,
+    "serviceExtraId" INTEGER NOT NULL,
+    "quantity" INTEGER NOT NULL,
+    "unitPrice" DECIMAL(10,2) NOT NULL,
+    "subtotal" DECIMAL(10,2) NOT NULL,
+
+    CONSTRAINT "ServiceReservationExtra_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateIndex
+CREATE INDEX "ServiceSlot_serviceType_active_idx" ON "ServiceSlot"("serviceType", "active");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "ServiceReservation_code_key" ON "ServiceReservation"("code");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "ServiceReservation_qrCode_key" ON "ServiceReservation"("qrCode");
+
+-- CreateIndex
+CREATE INDEX "ServiceReservation_clientId_idx" ON "ServiceReservation"("clientId");
+
+-- CreateIndex
+CREATE INDEX "ServiceReservation_stayId_idx" ON "ServiceReservation"("stayId");
+
+-- CreateIndex
+CREATE INDEX "ServiceReservation_serviceType_idx" ON "ServiceReservation"("serviceType");
+
+-- CreateIndex
+CREATE INDEX "ServiceReservation_status_idx" ON "ServiceReservation"("status");
+
+-- CreateIndex
+CREATE INDEX "ServiceReservation_date_idx" ON "ServiceReservation"("date");
+
+-- CreateIndex
+CREATE INDEX "ServiceReservation_slotId_idx" ON "ServiceReservation"("slotId");
+
+-- AddForeignKey
+ALTER TABLE "Payment" ADD CONSTRAINT "Payment_serviceReservationId_fkey" FOREIGN KEY ("serviceReservationId") REFERENCES "ServiceReservation"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "PoolEntry" ADD CONSTRAINT "PoolEntry_serviceReservationId_fkey" FOREIGN KEY ("serviceReservationId") REFERENCES "ServiceReservation"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ServiceReservation" ADD CONSTRAINT "ServiceReservation_clientId_fkey" FOREIGN KEY ("clientId") REFERENCES "Client"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ServiceReservation" ADD CONSTRAINT "ServiceReservation_stayId_fkey" FOREIGN KEY ("stayId") REFERENCES "Stay"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ServiceReservation" ADD CONSTRAINT "ServiceReservation_reservationId_fkey" FOREIGN KEY ("reservationId") REFERENCES "Reservation"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ServiceReservation" ADD CONSTRAINT "ServiceReservation_slotId_fkey" FOREIGN KEY ("slotId") REFERENCES "ServiceSlot"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ServiceReservation" ADD CONSTRAINT "ServiceReservation_planId_fkey" FOREIGN KEY ("planId") REFERENCES "ServicePlan"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ServiceReservationExtra" ADD CONSTRAINT "ServiceReservationExtra_serviceReservationId_fkey" FOREIGN KEY ("serviceReservationId") REFERENCES "ServiceReservation"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ServiceReservationExtra" ADD CONSTRAINT "ServiceReservationExtra_serviceExtraId_fkey" FOREIGN KEY ("serviceExtraId") REFERENCES "ServiceExtra"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+

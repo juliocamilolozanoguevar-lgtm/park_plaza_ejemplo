@@ -1,6 +1,7 @@
 import { prisma } from "../config/prisma.js";
+import { Prisma } from "@prisma/client";
 import { HttpError, notFound } from "../utils/httpError.js";
-import { registerMovement } from "./inventory.service.js";
+import { getAvailableLotsForProduct } from "./inventory-lot.service.js";
 
 const recipeAreas = new Set(["RESTAURANTE", "BARTENDER"]);
 
@@ -14,63 +15,54 @@ function normalizeUnit(unit = "") {
   return value;
 }
 
+// Retorna Prisma.Decimal o null
 function convertQuantity(quantity, fromUnit, toUnit) {
   const from = normalizeUnit(fromUnit);
   const to = normalizeUnit(toUnit);
-  const value = Number(quantity || 0);
+  const value = new Prisma.Decimal(quantity || 0);
+  
   if (from === to) return value;
-  if (from === "g" && to === "kg") return value / 1000;
-  if (from === "kg" && to === "g") return value * 1000;
-  if (from === "ml" && to === "l") return value / 1000;
-  if (from === "l" && to === "ml") return value * 1000;
+  if (from === "g" && to === "kg") return value.dividedBy(1000);
+  if (from === "kg" && to === "g") return value.times(1000);
+  if (from === "ml" && to === "l") return value.dividedBy(1000);
+  if (from === "l" && to === "ml") return value.times(1000);
   return null;
 }
 
-function roundQty(value) {
-  return Math.round(Number(value || 0) * 100) / 100;
+// Redondeo final a Decimal(14, 4)
+export function roundQty(value) {
+  return new Prisma.Decimal(value || 0).toDecimalPlaces(4, Prisma.Decimal.ROUND_HALF_UP);
 }
 
 function isInventoryArea(area) {
   return recipeAreas.has(area);
 }
 
+// Calcula suma de allocations activas por producto
 async function activeReservedByProduct(db, productIds, orderId) {
   if (!productIds.length) return new Map();
-  const rows = await db.orderStockReservationItem.findMany({
+
+  const items = await db.orderStockReservationItem.findMany({
     where: {
       productId: { in: productIds },
       reservation: { status: "ACTIVA", orderId: { not: orderId } }
     },
     select: { productId: true, quantity: true }
   });
-  return rows.reduce((map, item) => {
-    map.set(item.productId, roundQty((map.get(item.productId) || 0) + Number(item.quantity)));
+
+  return items.reduce((map, item) => {
+    const qty = new Prisma.Decimal(item.quantity);
+    const current = map.get(item.productId) || new Prisma.Decimal(0);
+    map.set(item.productId, current.plus(qty));
     return map;
   }, new Map());
-}
-
-function addRequirement(requirements, product, quantity, unit, source) {
-  const current = requirements.get(product.id);
-  const required = roundQty(quantity);
-  if (current) {
-    current.required = roundQty(current.required + required);
-    current.sources.push(source);
-    return;
-  }
-  requirements.set(product.id, {
-    productId: product.id,
-    product,
-    required,
-    unit,
-    sources: [source]
-  });
 }
 
 export async function buildOrderRecipePlan(orderOrId, db = prisma) {
   const order = typeof orderOrId === "number"
     ? await db.order.findUnique({
         where: { id: orderOrId },
-        include: { items: { include: { product: true } }, stay: { include: { client: true, room: true } } }
+        include: { items: { include: { product: true } } }
       })
     : orderOrId;
   if (!order) throw notFound("Pedido no encontrado.");
@@ -84,6 +76,8 @@ export async function buildOrderRecipePlan(orderOrId, db = prisma) {
   const issues = [];
 
   for (const orderItem of order.items || []) {
+    const orderedQty = new Prisma.Decimal(orderItem.quantity || 1);
+
     const recipe = await db.recipe.findFirst({
       where: {
         area: order.area,
@@ -107,25 +101,66 @@ export async function buildOrderRecipePlan(orderOrId, db = prisma) {
           });
           continue;
         }
-        addRequirement(
-          requirements,
-          ingredient.product,
-          converted * Number(orderItem.quantity || 1),
-          ingredient.product.unit,
-          `${Number(orderItem.quantity || 1)} x ${recipe.name}`
-        );
+
+        const requiredTotal = converted.times(orderedQty);
+        
+        const sourceJson = {
+          orderItemId: orderItem.id,
+          recipeId: recipe.id,
+          recipeName: recipe.name,
+          orderedQuantity: orderedQty.toNumber(),
+          ingredientProductId: ingredient.productId,
+          ingredientName: ingredient.product.name,
+          quantityPerUnit: new Prisma.Decimal(ingredient.quantity).toNumber(),
+          recipeUnit: ingredient.unit,
+          requiredQty: requiredTotal.toNumber(),
+          requiredUnit: ingredient.product.unit
+        };
+
+        const current = requirements.get(ingredient.product.id);
+        if (current) {
+          current.required = current.required.plus(requiredTotal);
+          current.sourcesJson.push(sourceJson);
+        } else {
+          requirements.set(ingredient.product.id, {
+            productId: ingredient.product.id,
+            product: ingredient.product,
+            required: requiredTotal,
+            unit: ingredient.product.unit,
+            sourcesJson: [sourceJson]
+          });
+        }
       }
       continue;
     }
 
     if (orderItem.product) {
-      addRequirement(
-        requirements,
-        orderItem.product,
-        Number(orderItem.quantity || 1),
-        orderItem.product.unit,
-        `${Number(orderItem.quantity || 1)} x ${orderItem.name}`
-      );
+      const sourceJson = {
+        orderItemId: orderItem.id,
+        recipeId: null,
+        recipeName: null,
+        orderedQuantity: orderedQty.toNumber(),
+        ingredientProductId: orderItem.product.id,
+        ingredientName: orderItem.product.name,
+        quantityPerUnit: 1,
+        recipeUnit: orderItem.product.unit,
+        requiredQty: orderedQty.toNumber(),
+        requiredUnit: orderItem.product.unit
+      };
+
+      const current = requirements.get(orderItem.product.id);
+      if (current) {
+        current.required = current.required.plus(orderedQty);
+        current.sourcesJson.push(sourceJson);
+      } else {
+        requirements.set(orderItem.product.id, {
+          productId: orderItem.product.id,
+          product: orderItem.product,
+          required: orderedQty,
+          unit: orderItem.product.unit,
+          sourcesJson: [sourceJson]
+        });
+      }
     } else {
       missingRecipes.push({
         itemId: orderItem.id,
@@ -137,24 +172,29 @@ export async function buildOrderRecipePlan(orderOrId, db = prisma) {
 
   const productIds = [...requirements.keys()];
   const reservedMap = await activeReservedByProduct(db, productIds, order.id);
+  
   const lines = [...requirements.values()].map((line) => {
-    const stock = Number(line.product.stock || 0);
-    const reserved = Number(reservedMap.get(line.productId) || 0);
-    const available = roundQty(stock - reserved);
-    const enough = available >= line.required;
+    const requiredStr = roundQty(line.required);
+    
+    // Convert to Prisma.Decimal
+    const stock = new Prisma.Decimal(line.product.stock || 0);
+    const reserved = reservedMap.get(line.productId) || new Prisma.Decimal(0);
+    const available = roundQty(stock.minus(reserved));
+    const enough = available.gte(requiredStr);
+    
     return {
       productId: line.productId,
       productName: line.product.name,
       category: line.product.category?.name || null,
-      required: line.required,
-      available,
-      reserved,
-      stock,
+      required: requiredStr.toNumber(),
+      available: available.toNumber(),
+      reserved: roundQty(reserved).toNumber(),
+      stock: stock.toNumber(),
       unit: line.unit,
       cost: Number(line.product.cost || 0),
-      stockStatus: stock <= 0 ? "SIN_STOCK" : stock <= Number(line.product.minStock || 0) ? "STOCK_BAJO" : "OK",
+      stockStatus: stock.lte(0) ? "SIN_STOCK" : stock.lte(line.product.minStock || 0) ? "STOCK_BAJO" : "OK",
       enough,
-      sources: line.sources
+      sourcesJson: line.sourcesJson
     };
   });
 
@@ -171,116 +211,234 @@ export async function buildOrderRecipePlan(orderOrId, db = prisma) {
 }
 
 export async function reserveOrderStock(orderId, userId, db = prisma) {
-  const order = await db.order.findUnique({
-    where: { id: orderId },
-    include: {
-      items: { include: { product: { include: { category: true } } } },
-      stockReservation: { include: { items: true } }
+  const execute = async (tx) => {
+    const order = await tx.order.findUnique({
+      where: { id: orderId },
+      include: { stockReservation: true, items: true }
+    });
+    if (!order) throw notFound("Pedido no encontrado.");
+    
+    if (order.stockReservation?.status === "ACTIVA") {
+      return tx.orderStockReservation.findUnique({
+        where: { orderId },
+        include: { items: { include: { product: true, allocations: true } } }
+      });
     }
-  });
-  if (!order) throw notFound("Pedido no encontrado.");
-  if (order.stockReservation?.status === "ACTIVA") {
-    return db.orderStockReservation.findUnique({
+    if (order.stockReservation?.status === "CONSUMIDA") {
+      throw new HttpError(422, "Este pedido ya ha sido procesado (CONSUMIDA o CANCELADA) y no puede reservar inventario.");
+    }
+
+    if (order.stockReservation?.status === "LIBERADA") {
+      throw new HttpError(422, "Este pedido fue liberado/cancelado y no puede volver a reservar inventario.");
+    }
+
+    const plan = await buildOrderRecipePlan(order, tx);
+    if (!plan.canPrepare) {
+      throw new HttpError(422, "No hay stock suficiente o falta configurar receta.", {
+        insufficient: plan.insufficient,
+        missingRecipes: plan.missingRecipes,
+        issues: plan.issues
+      });
+    }
+
+    const reservation = await tx.orderStockReservation.create({
+      data: {
+        orderId,
+        status: "ACTIVA",
+        createdById: userId || null,
+      }
+    });
+
+    for (const line of plan.requirements) {
+      const reqQty = new Prisma.Decimal(line.required);
+      
+      const resItem = await tx.orderStockReservationItem.create({
+        data: {
+          reservationId: reservation.id,
+          productId: line.productId,
+          quantity: reqQty,
+          unit: line.unit,
+          source: JSON.stringify(line.sourcesJson),
+          sourcesJson: line.sourcesJson
+        }
+      });
+
+      const lots = await getAvailableLotsForProduct(line.productId, tx);
+      let pending = reqQty;
+      
+      for (const lot of lots) {
+        if (pending.lte(0)) break;
+        
+        const allocs = await tx.orderStockLotAllocation.aggregate({
+          where: { 
+            inventoryLotId: lot.id, 
+            reservationItem: { reservation: { status: "ACTIVA" } } 
+          },
+          _sum: { quantity: true }
+        });
+        
+        const usedInLot = new Prisma.Decimal(allocs._sum.quantity || 0);
+        const lotAvail = new Prisma.Decimal(lot.currentQty).minus(usedInLot);
+        
+        if (lotAvail.lte(0)) continue;
+        
+        const toTake = Prisma.Decimal.min(pending, lotAvail);
+        
+        await tx.orderStockLotAllocation.create({
+          data: {
+            reservationItemId: resItem.id,
+            inventoryLotId: lot.id,
+            quantity: toTake
+          }
+        });
+        
+        pending = pending.minus(toTake);
+      }
+      
+      if (pending.gt(0)) {
+        throw new HttpError(409, `Concurrencia: No hay suficientes lotes disponibles para el producto ${line.productName}`);
+      }
+    }
+
+    return tx.orderStockReservation.findUnique({
       where: { orderId },
-      include: { items: { include: { product: true } } }
+      include: { items: { include: { allocations: true, product: true } } }
     });
-  }
-  if (order.stockReservation?.status === "CONSUMIDA") {
-    throw new HttpError(422, "Este pedido ya consumio inventario.");
+  };
+
+  if (typeof db.$transaction !== 'function') {
+    return execute(db);
   }
 
-  const plan = await buildOrderRecipePlan(order, db);
-  if (!plan.canPrepare) {
-    throw new HttpError(422, "No hay stock suficiente o falta configurar receta.", {
-      insufficient: plan.insufficient,
-      missingRecipes: plan.missingRecipes,
-      issues: plan.issues
-    });
+  let attempts = 0;
+  const maxAttempts = 10;
+  while (attempts < maxAttempts) {
+    try {
+      return await db.$transaction(execute, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }); 
+    } catch (error) {
+      if (error.code === 'P2034' && attempts < maxAttempts - 1) {
+        attempts++;
+        const jitter = Math.floor(Math.random() * 300);
+        await new Promise(res => setTimeout(res, 100 * attempts + jitter)); 
+        continue;
+      }
+      throw error;
+    }
   }
-
-  return db.orderStockReservation.upsert({
-    where: { orderId },
-    update: {
-      status: "ACTIVA",
-      createdById: userId || null,
-      consumedAt: null,
-      releasedAt: null,
-      items: {
-        deleteMany: {},
-        create: plan.requirements.map((line) => ({
-          productId: line.productId,
-          quantity: line.required,
-          unit: line.unit,
-          source: line.sources.join(", ")
-        }))
-      }
-    },
-    create: {
-      orderId,
-      status: "ACTIVA",
-      createdById: userId || null,
-      items: {
-        create: plan.requirements.map((line) => ({
-          productId: line.productId,
-          quantity: line.required,
-          unit: line.unit,
-          source: line.sources.join(", ")
-        }))
-      }
-    },
-    include: { items: { include: { product: true } } }
-  });
 }
 
 export async function consumeOrderReservation(orderId, orderCode, userId, db = prisma) {
-  const existingMovement = await db.inventoryMovement.findFirst({
-    where: { 
-      OR: [
-        { reference: `CONSUMO_RECETA:${orderId}` },
-        { reference: `PEDIDO:${orderId}` }
-      ]
+  const execute = async (tx) => {
+    // 1. Update atómico
+    const updateResult = await tx.$executeRaw`
+      UPDATE "OrderStockReservation"
+      SET status = 'CONSUMIDA', "consumedAt" = NOW()
+      WHERE "orderId" = ${orderId} AND status = 'ACTIVA'
+    `;
+
+    if (updateResult === 0) {
+      const checkRes = await tx.orderStockReservation.findUnique({ where: { orderId } });
+      if (!checkRes || checkRes.status === "LIBERADA") {
+        throw new HttpError(422, "No se puede consumir un pedido sin reservar o que ha sido liberado.");
+      }
+      if (checkRes.status === "CONSUMIDA") {
+        return checkRes;
+      }
     }
-  });
-  if (existingMovement) {
-    return db.orderStockReservation.update({
+
+    const reservation = await tx.orderStockReservation.findUnique({
       where: { orderId },
-      data: { status: "CONSUMIDA", consumedAt: new Date() },
-      include: { items: { include: { product: true } } }
+      include: { 
+        items: { 
+          include: { 
+            allocations: true, 
+            product: true 
+          } 
+        } 
+      }
     });
-  }
 
-  let reservation = await db.orderStockReservation.findUnique({
-    where: { orderId },
-    include: { items: { include: { product: true } } }
-  });
-  if (!reservation || reservation.status === "LIBERADA") {
-    reservation = await reserveOrderStock(orderId, userId, db);
-  }
-  if (reservation.status === "CONSUMIDA") return reservation;
+    for (const item of reservation.items) {
+      for (const allocation of item.allocations) {
+        const qty = new Prisma.Decimal(allocation.quantity);
 
-  for (const item of reservation.items) {
-    await registerMovement("SALIDA", {
-      productId: item.productId,
-      quantity: item.quantity,
-      origin: "PEDIDO",
-      reason: `Consumo receta pedido ${orderCode}`,
-      reference: `PEDIDO:${orderId}`
-    }, userId, db);
-  }
+        // Descuento atómico del Lote
+        const updateLot = await tx.$executeRaw`
+          UPDATE "InventoryLot"
+          SET "currentQty" = "currentQty" - ${qty}
+          WHERE id = ${allocation.inventoryLotId}
+          AND "currentQty" >= ${qty}
+        `;
 
-  return db.orderStockReservation.update({
-    where: { orderId },
-    data: { status: "CONSUMIDA", consumedAt: new Date() },
-    include: { items: { include: { product: true } } }
-  });
+        if (updateLot === 0) {
+          throw new HttpError(500, `Inconsistencia critica: El lote ID ${allocation.inventoryLotId} no existe o se sobregiraria negativamente al consumir ${qty}`);
+        }
+
+        // Descuento atómico del Producto Global
+        const updateProd = await tx.$executeRaw`
+          UPDATE "Product"
+          SET stock = stock - ${qty}
+          WHERE id = ${item.productId}
+          AND stock >= ${qty}
+        `;
+
+        if (updateProd === 0) {
+          throw new HttpError(500, `Inconsistencia critica: El producto ID ${item.productId} no existe o se sobregiraria negativamente al consumir ${qty}`);
+        }
+
+        // Leer datos actuales para guardar historial
+        const lot = await tx.inventoryLot.findUnique({ where: { id: allocation.inventoryLotId }});
+        const prod = await tx.product.findUnique({ where: { id: item.productId }});
+
+        const afterProdStock = new Prisma.Decimal(prod.stock);
+        const currentProdStock = afterProdStock.plus(qty);
+
+        await tx.inventoryMovement.create({
+          data: {
+            productId: item.productId,
+            inventoryLotId: lot.id,
+            allocationId: allocation.id,
+            type: "SALIDA",
+            origin: "PEDIDO",
+            quantity: qty,
+            beforeQty: currentProdStock,
+            afterQty: afterProdStock,
+            unitCost: lot.unitCost,
+            reason: `Consumo receta pedido ${orderCode} (Lote ${lot.code})`,
+            reference: `PEDIDO:${orderId}`,
+            createdById: userId || null
+          }
+        });
+      }
+    }
+
+    return reservation;
+  };
+  
+  if (typeof db.$transaction !== 'function') return execute(db);
+  return await db.$transaction(execute);
 }
 
 export async function releaseOrderReservation(orderId, db = prisma) {
-  const reservation = await db.orderStockReservation.findUnique({ where: { orderId } });
-  if (!reservation || reservation.status !== "ACTIVA") return reservation;
-  return db.orderStockReservation.update({
-    where: { orderId },
-    data: { status: "LIBERADA", releasedAt: new Date() },
-    include: { items: { include: { product: true } } }
-  });
+  const execute = async (tx) => {
+    const updateResult = await tx.$executeRaw`
+      UPDATE "OrderStockReservation"
+      SET status = 'LIBERADA', "releasedAt" = NOW()
+      WHERE "orderId" = ${orderId} AND status = 'ACTIVA'
+    `;
+
+    if (updateResult === 0) {
+      const checkRes = await tx.orderStockReservation.findUnique({ where: { orderId } });
+      if (!checkRes) return checkRes;
+      if (checkRes.status === "CONSUMIDA") {
+        throw new HttpError(422, "No se puede liberar un pedido que ya ha sido consumido.");
+      }
+      return checkRes; 
+    }
+
+    return tx.orderStockReservation.findUnique({ where: { orderId } });
+  };
+  
+  if (typeof db.$transaction !== 'function') return execute(db);
+  return await db.$transaction(execute);
 }

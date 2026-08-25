@@ -24,6 +24,18 @@ export const update = asyncHandler(async (req, res) => {
 
 export const destroy = asyncHandler(async (req, res) => {
   const reservation = await service.cancelReservation(Number(req.params.id));
-  await audit(req, "RESERVAS", "CANCELAR", reservation.code);
+  await audit(req, "RESERVAS", reservation.deleted ? "ELIMINAR" : "CANCELAR", reservation.code);
+  res.json(reservation);
+});
+
+export const confirmCashPayment = asyncHandler(async (req, res) => {
+  const reservation = await service.confirmReservationCashPayment(Number(req.params.id), req.user?.id);
+  await audit(req, "RESERVAS", "CONFIRMAR_PAGO_EFECTIVO", reservation.code);
+  res.json(reservation);
+});
+
+export const confirmPayment = asyncHandler(async (req, res) => {
+  const reservation = await service.confirmReservationPayment(Number(req.params.id), req.body, req.user?.id);
+  await audit(req, "RESERVAS", "CONFIRMAR_PAGO", reservation.code);
   res.json(reservation);
 });
