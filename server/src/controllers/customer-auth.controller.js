@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+import { createHash } from 'crypto';
 import { PrismaClient } from '@prisma/client';
 import { env } from '../config/env.js';
 import { createError } from '../utils/httpError.js';
@@ -68,6 +69,69 @@ export const externalSession = async (req, res, next) => {
     };
 
     const token = jwt.sign(payload, env.jwtSecret, { expiresIn: '8h' });
+
+    res.json({
+      success: true,
+      data: {
+        token,
+        client: {
+          id: client.id,
+          firstName: client.firstName,
+          lastName: client.lastName,
+          email: client.email,
+          documentNumber: client.documentNumber
+        }
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const googleSession = async (req, res, next) => {
+  try {
+    const credential = req.body?.credential || {};
+    const profile = typeof credential === 'string' ? {} : credential;
+    const email = String(profile.email || '').trim().toLowerCase();
+    const fullName = String(profile.name || '').trim();
+    const firstName = String(profile.given_name || fullName.split(' ')[0] || 'Cliente').trim();
+    const lastName = String(profile.family_name || fullName.split(' ').slice(1).join(' ') || 'Google').trim();
+
+    if (!email) {
+      throw createError(400, 'Email de Google obligatorio');
+    }
+
+    const googleHash = createHash('sha1').update(email).digest('hex').slice(0, 12).toUpperCase();
+    const documentNumber = `GOOGLE-${googleHash}`;
+
+    let client = await prisma.client.findFirst({
+      where: {
+        OR: [
+          { email },
+          { documentNumber }
+        ]
+      }
+    });
+
+    if (!client) {
+      client = await prisma.client.create({
+        data: {
+          documentType: 'GOOGLE',
+          documentNumber,
+          firstName,
+          lastName,
+          email,
+          phone: profile.phone || null,
+          status: 'ACTIVO'
+        }
+      });
+    }
+
+    if (client.status !== 'ACTIVO') {
+      throw createError(403, 'Client account is not active');
+    }
+
+    const token = jwt.sign({ clientId: client.id, scope: 'CUSTOMER' }, env.jwtSecret, { expiresIn: '8h' });
 
     res.json({
       success: true,
