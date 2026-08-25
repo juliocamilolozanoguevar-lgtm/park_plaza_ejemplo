@@ -1,10 +1,18 @@
 import jwt from 'jsonwebtoken';
 import { createHash } from 'crypto';
+import admin from 'firebase-admin';
 import { PrismaClient } from '@prisma/client';
 import { env } from '../config/env.js';
 import { createError } from '../utils/httpError.js';
 
 const prisma = new PrismaClient();
+
+function firebaseAuth() {
+  if (!admin.apps.length) {
+    admin.initializeApp({ projectId: env.firebaseProjectId });
+  }
+  return admin.auth();
+}
 
 /**
  * POST /api/customer/session
@@ -91,11 +99,23 @@ export const externalSession = async (req, res, next) => {
 export const googleSession = async (req, res, next) => {
   try {
     const credential = req.body?.credential || {};
-    const profile = typeof credential === 'string' ? {} : credential;
-    const email = String(profile.email || '').trim().toLowerCase();
-    const fullName = String(profile.name || '').trim();
-    const firstName = String(profile.given_name || fullName.split(' ')[0] || 'Cliente').trim();
-    const lastName = String(profile.family_name || fullName.split(' ').slice(1).join(' ') || 'Google').trim();
+    const idToken = typeof credential === 'string' ? credential : credential.idToken;
+
+    if (!idToken) {
+      throw createError(400, 'Token de Firebase obligatorio');
+    }
+
+    let decoded;
+    try {
+      decoded = await firebaseAuth().verifyIdToken(idToken);
+    } catch {
+      throw createError(401, 'Token de Firebase inválido');
+    }
+
+    const email = String(decoded.email || '').trim().toLowerCase();
+    const fullName = String(decoded.name || credential.name || '').trim();
+    const firstName = String(decoded.firebase?.sign_in_provider === 'google.com' ? credential.given_name || fullName.split(' ')[0] || 'Cliente' : fullName.split(' ')[0] || 'Cliente').trim();
+    const lastName = String(credential.family_name || fullName.split(' ').slice(1).join(' ') || 'Google').trim();
 
     if (!email) {
       throw createError(400, 'Email de Google obligatorio');
@@ -121,7 +141,7 @@ export const googleSession = async (req, res, next) => {
           firstName,
           lastName,
           email,
-          phone: profile.phone || null,
+          phone: credential.phone || null,
           status: 'ACTIVO'
         }
       });

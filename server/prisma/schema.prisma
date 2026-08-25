@@ -35,7 +35,7 @@ model Role {
   name        RoleName         @unique
   description String?
   createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
+  updatedAt         DateTime         @default(now()) @updatedAt
   permissions RolePermission[]
   users       User[]
 }
@@ -70,7 +70,7 @@ model User {
   status                       UserStatus            @default(ACTIVO)
   roleId                       Int
   createdAt                    DateTime              @default(now())
-  updatedAt                    DateTime              @updatedAt
+  updatedAt         DateTime         @default(now()) @updatedAt
   birthDate                    DateTime?
   documentNumber               String?               @unique
   hireDate                     DateTime?
@@ -106,7 +106,7 @@ model AttendanceRecord {
   correctedById    Int?
   correctionReason String?
   createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
+  updatedAt         DateTime         @default(now()) @updatedAt
   correctedBy      User?            @relation("AttendanceCorrectedBy", fields: [correctedById], references: [id])
   user             User             @relation("AttendanceWorker", fields: [userId], references: [id])
 
@@ -127,7 +127,7 @@ model Client {
   registeredAt        DateTime             @default(now())
   status              ClientStatus         @default(ACTIVO)
   createdAt           DateTime             @default(now())
-  updatedAt           DateTime             @updatedAt
+  updatedAt         DateTime         @default(now()) @updatedAt
   consumptions        Consumption[]
   events              Event[]
   invoices            Invoice[]
@@ -164,7 +164,7 @@ model Room {
   description        String?
   status             RoomStatus          @default(LIBRE)
   createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
+  updatedAt         DateTime         @default(now()) @updatedAt
   cleaningEvidences  CleaningEvidence[]
   cleaningReports    CleaningReport[]
   cleaningTasks      CleaningTask[]
@@ -195,7 +195,7 @@ model Reservation {
   notes               String?
   createdById         Int?
   createdAt           DateTime             @default(now())
-  updatedAt           DateTime             @updatedAt
+  updatedAt         DateTime         @default(now()) @updatedAt
   origin              ReservationOrigin    @default(RECEPCION)
   payments            Payment[]
   poolEntries         PoolEntry[]
@@ -218,7 +218,7 @@ model Stay {
   checkOutAt          DateTime?
   status              StayStatus           @default(ACTIVA)
   createdAt           DateTime             @default(now())
-  updatedAt           DateTime             @updatedAt
+  updatedAt         DateTime         @default(now()) @updatedAt
   consumptions        Consumption[]
   orders              Order[]
   payments            Payment[]
@@ -241,7 +241,7 @@ model Order {
   notes            String?
   createdById      Int?
   createdAt        DateTime               @default(now())
-  updatedAt        DateTime               @updatedAt
+  updatedAt         DateTime         @default(now()) @updatedAt
   consumption      Consumption?
   stay             Stay?                  @relation(fields: [stayId], references: [id])
   items            OrderItem[]
@@ -258,10 +258,10 @@ model OrderItem {
   menuItemVariantId Int?
   quantity          Int
   price             Decimal
-  subtotal          Decimal
+  subtotal          Decimal          @default(0)
   notes             String?
   createdAt         DateTime         @default(now())
-  updatedAt         DateTime         @updatedAt
+  updatedAt         DateTime         @default(now()) @updatedAt
   
   order             Order            @relation(fields: [orderId], references: [id])
   product           Product?         @relation(fields: [productId], references: [id])
@@ -452,7 +452,7 @@ model CleaningTask {
   minibar            Boolean             @default(false)
   finalCheck         Boolean             @default(false)
   createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
+  updatedAt         DateTime         @default(now()) @updatedAt
   finishedById       Int?
   evidences          CleaningEvidence[]
   reports            CleaningReport[]
@@ -563,7 +563,7 @@ model Product {
   price                 Decimal                     @default(0) @db.Decimal(10, 2)
   status                String                      @default("ACTIVO")
   createdAt             DateTime                    @default(now())
-  updatedAt             DateTime                    @updatedAt
+  updatedAt         DateTime         @default(now()) @updatedAt
   area                  InventoryArea               @default(RESTAURANTE)
   active                Boolean                     @default(true)
   inventoryInspections  InventoryInspection[]
@@ -592,7 +592,7 @@ model OrderStockReservation {
   consumedAt  DateTime?
   releasedAt  DateTime?
   createdAt   DateTime                    @default(now())
-  updatedAt   DateTime                    @updatedAt
+  updatedAt         DateTime         @default(now()) @updatedAt
   order       Order                       @relation(fields: [orderId], references: [id])
   items       OrderStockReservationItem[]
 
@@ -620,7 +620,7 @@ model Recipe {
   area      InventoryArea
   active    Boolean       @default(true)
   createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
+  updatedAt         DateTime         @default(now()) @updatedAt
   items     RecipeItem[]
 
   @@unique([name, area])
@@ -744,7 +744,7 @@ model InventoryLot {
   purchaseItemId  Int?                      @unique
   active          Boolean                   @default(true)
   createdAt       DateTime                  @default(now())
-  updatedAt       DateTime                  @updatedAt
+  updatedAt         DateTime         @default(now()) @updatedAt
   supplierId      Int?
   supplierLotCode String?
   inspections     InventoryInspection[]
@@ -855,7 +855,7 @@ model HotelSettings {
   taxRate    Decimal  @default(18) @db.Decimal(5, 2)
   timezone   String   @default("America/Lima")
   dateFormat String   @default("dd/MM/yyyy")
-  updatedAt  DateTime @updatedAt
+  updatedAt         DateTime         @default(now()) @updatedAt
 }
 
 model ServiceSlot {
@@ -866,7 +866,7 @@ model ServiceSlot {
   capacity     Int
   active       Boolean                @default(true)
   createdAt    DateTime               @default(now())
-  updatedAt    DateTime               @updatedAt
+  updatedAt         DateTime         @default(now()) @updatedAt
   reservations ServiceReservation[]
 
   @@index([serviceType, active])
@@ -882,7 +882,7 @@ model ServicePlan {
   pricingMode  ServicePricingMode
   active       Boolean                @default(true)
   createdAt    DateTime               @default(now())
-  updatedAt    DateTime               @updatedAt
+  updatedAt         DateTime         @default(now()) @updatedAt
   reservations ServiceReservation[]
 }
 
@@ -894,7 +894,7 @@ model ServiceExtra {
   price             Decimal                   @db.Decimal(10, 2)
   active            Boolean                   @default(true)
   createdAt         DateTime                  @default(now())
-  updatedAt         DateTime                  @updatedAt
+  updatedAt         DateTime         @default(now()) @updatedAt
   reservationExtras ServiceReservationExtra[]
 }
 
@@ -922,7 +922,7 @@ model ServiceReservation {
   notes         String?
   qrCode        String?                   @unique
   createdAt     DateTime                  @default(now())
-  updatedAt     DateTime                  @updatedAt
+  updatedAt         DateTime         @default(now()) @updatedAt
   cancelledAt   DateTime?
   checkedInAt   DateTime?
   completedAt   DateTime?
@@ -1199,7 +1199,7 @@ model GuestRequest {
   priority     GuestRequestPriority @default(NORMAL)
   resolvedById Int?
   createdAt    DateTime             @default(now())
-  updatedAt    DateTime             @updatedAt
+  updatedAt         DateTime         @default(now()) @updatedAt
   resolvedAt   DateTime?
 
   client     Client @relation(fields: [clientId], references: [id])
@@ -1220,7 +1220,7 @@ model MenuCategory {
   active       Boolean    @default(true)
   items        MenuItem[]
   createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  updatedAt         DateTime         @default(now()) @updatedAt
 }
 
 model MenuItem {
@@ -1237,7 +1237,7 @@ model MenuItem {
   variants     MenuItemVariant[]
   orderItems   OrderItem[]
   createdAt    DateTime          @default(now())
-  updatedAt    DateTime          @updatedAt
+  updatedAt         DateTime         @default(now()) @updatedAt
 }
 
 model MenuItemVariant {
@@ -1249,3 +1249,4 @@ model MenuItemVariant {
   menuItem   MenuItem    @relation(fields: [menuItemId], references: [id])
   orderItems OrderItem[]
 }
+
